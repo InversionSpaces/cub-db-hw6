@@ -59,23 +59,23 @@ All values are string literals using single quotes. Double single quotes to esca
 
 ---
 
-## Dependencies
-
-- Python >=3.11
-- `antlr4-python3-runtime` (SQL parsing via ANTLR), dev: `antlr4-tools`, `mypy`, `pytest`
-
-## Commands
-
-```sh
-make test
-make lint
-make generate
-make clean
-```
-
 ## Architecture
 
-Uses a PostgreSQL-style slotted page binary storage format.
+The system follows a layered design: SQL text is parsed into an immutable AST, which the executor interprets by calling storage operations.
+
+### Storage Layer
+
+The storage layer uses a **PostgreSQL-inspired slotted page format** with 4KB fixed-size pages. Each page contains a header, an array of item pointers, and the actual data items stored from the end of the page upward. Rows are limited to approximately 4KB in size.
+
+Meta pages form a singly linked list starting from page 0. Each table's data pages form their own separate linked list. The metadata chain contains one entry per table with the table name, column names, and pointer to the head of that table's data page chain.
+
+The system maintains an **LRU page cache** to avoid repeated disk I/O. Clean pages can be evicted when the cache fills, but dirty pages must remain in memory until commit. This means long transactions that modify many pages will accumulate memory pressure.
+
+### Transaction Model
+
+The system uses **statement-level auto-commit** where each SQL statement commits independently. Operations are first staged in memory, then applied to pages and persisted to disk with fsync for durability.
+
+There is no support for concurrent access (single-writer model). Updates are performed in-place when the new row fits in the old slot, otherwise the old slot is deleted and the row inserted elsewhere.
 
 ## Project Structure
 
@@ -104,16 +104,24 @@ hw6/
     ├── test_ast.py
     ├── test_visitor.py
     ├── test_executor.py
-    └── test_storage.py
+    ├── test_storage.py
+    └── test_cli.py
 ```
 
-## Known Limitations
+## Commands
 
-### Metadata Durability
-Metadata chain extensions are not atomic. A crash during commit may leave the metadata chain in an inconsistent state.
+```sh
+make test
+make lint
+make generate
+make clean
+make coverage
+```
 
-### Bulk Insert Performance
-Large bulk inserts degrade to O(N^2) time due to linear page-chain scanning for free space.
+The `coverage` command generates a test coverage report using `coverage.py`.
+HTML report is written to `htmlcov/index.html`.
 
-### Memory Pressure in Long Transactions
-Modified pages cannot be evicted until commit. Long transactions that modify many pages will grow the cache unbounded. Commit frequently to avoid memory pressure.
+## Dependencies
+
+- Python >=3.11
+- `antlr4-python3-runtime` (SQL parsing via ANTLR), dev: `antlr4-tools`, `mypy`, `pytest`

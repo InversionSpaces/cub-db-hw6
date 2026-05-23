@@ -495,6 +495,11 @@ class FileStorage:
         return new_pid
 
     def _find_space_in_table(self, table_name: TableName, needed: int) -> PageId | None:
+        last_pid = self._table_last_page.get(table_name)
+        if last_pid is not None:
+            page = self._get_page(last_pid)
+            if page.free_space() >= needed:
+                return last_pid
         meta = self._tables[table_name]
         page_id = meta.head_data_page
         while page_id != PageId(0):
