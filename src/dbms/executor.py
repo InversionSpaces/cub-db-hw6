@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from dbms.ast_nodes import (
     Assignment,
@@ -10,7 +11,6 @@ from dbms.ast_nodes import (
     DeleteStmt,
     InsertStmt,
     Row,
-    SelectResult,
     SelectStmt,
     Statement,
     UpdateStmt,
@@ -20,13 +20,20 @@ from dbms.ast_nodes import (
     WhereExpr,
     WhereOr,
 )
+from dbms.storage_protocol import RowId
 from dbms.errors import (
     ColumnMismatchError,
     DuplicateColumnError,
     DuplicateTableError,
     TableNotFoundError,
 )
-from dbms.storage import Storage
+from dbms.storage_protocol import Storage
+
+
+@dataclass
+class SelectResult:
+    rows: tuple[Row, ...]
+    columns: tuple[str, ...]
 
 
 class Executor:
@@ -106,10 +113,11 @@ class Executor:
                     next(col for col in stmt.columns if col not in columns)
                 )
             out_cols = stmt.columns
+        col_index = {c: i for i, c in enumerate(columns)}
         result_rows: list[Row] = []
         for _, row in self._store.scan_rows(stmt.table):
-            if self._evaluate_where(stmt.where, row, columns):
-                result_rows.append(self._project(row, columns, out_cols))
+            if self._evaluate_where(stmt.where, row, columns, col_index):
+                result_rows.append(self._project(row, out_cols, col_index))
         return SelectResult(rows=tuple(result_rows), columns=tuple(out_cols))
 
     def update(self, stmt: UpdateStmt) -> int:
@@ -123,9 +131,10 @@ class Executor:
                 raise ColumnMismatchError(col)
             if isinstance(assign, AssignmentColEq) and assign.right not in columns:
                 raise ColumnMismatchError(assign.right)
+        col_index = {c: i for i, c in enumerate(columns)}
         count = 0
         for row_id, row in self._store.scan_rows(stmt.table):
-            if not self._evaluate_where(stmt.where, row, columns):
+            if not self._evaluate_where(stmt.where, row, columns, col_index):
                 continue
             new_row = self._apply_assignments(stmt.assignments, row, columns)
             self._store.mark_update(stmt.table, row_id, new_row)
@@ -139,36 +148,43 @@ class Executor:
             raise TableNotFoundError(stmt.table)
         columns = self._store.get_columns(stmt.table)
         self._validate_where_columns(stmt.where, columns)
+        col_index = {c: i for i, c in enumerate(columns)}
         count = 0
         for row_id, row in self._store.scan_rows(stmt.table):
-            if self._evaluate_where(stmt.where, row, columns):
+            if self._evaluate_where(stmt.where, row, columns, col_index):
                 self._store.mark_delete(stmt.table, row_id)
                 count += 1
         if count > 0:
             self._store.commit()
         return count
 
-    def _evaluate_where(self, where: WhereExpr | None, row: Row, columns: Sequence[str]) -> bool:
+    def _evaluate_where(
+        self,
+        where: WhereExpr | None,
+        row: Row,
+        columns: Sequence[str],
+        col_index: dict[str, int],
+    ) -> bool:
         match where:
             case None:
                 return True
             case WhereEq(column=col, value=val):
                 if col not in columns:
                     raise ColumnMismatchError(col)
-                return row[columns.index(col)] == val
+                return row[col_index[col]] == val
             case WhereColEq(left=l, right=r):
                 if l not in columns:
                     raise ColumnMismatchError(l)
                 if r not in columns:
                     raise ColumnMismatchError(r)
-                return row[columns.index(l)] == row[columns.index(r)]
+                return row[col_index[l]] == row[col_index[r]]
             case WhereAnd(operands=ops):
-                return all(self._evaluate_where(op, row, columns) for op in ops)
+                return all(self._evaluate_where(op, row, columns, col_index) for op in ops)
             case WhereOr(operands=ops):
-                return any(self._evaluate_where(op, row, columns) for op in ops)
+                return any(self._evaluate_where(op, row, columns, col_index) for op in ops)
 
-    def _project(self, row: Row, columns: Sequence[str], out_cols: Sequence[str]) -> Row:
-        return tuple(row[columns.index(c)] for c in out_cols)
+    def _project(self, row: Row, out_cols: Sequence[str], col_index: dict[str, int]) -> Row:
+        return tuple(row[col_index[c]] for c in out_cols)
 
     def _apply_assignments(
         self, assignments: tuple[AssignmentExpr, ...], row: Row, columns: Sequence[str]

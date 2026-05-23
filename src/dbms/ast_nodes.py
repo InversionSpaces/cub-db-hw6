@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 
+Row = tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class WhereEq:
     column: str
@@ -80,16 +83,9 @@ class DeleteStmt:
 Statement = CreateTableStmt | InsertStmt | SelectStmt | UpdateStmt | DeleteStmt
 
 
-Row = tuple[str, ...]
-
-
 @dataclass
 class TableDef:
     name: str
     columns: tuple[str, ...]
 
 
-@dataclass
-class SelectResult:
-    rows: tuple[Row, ...]
-    columns: tuple[str, ...]

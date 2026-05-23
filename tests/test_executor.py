@@ -6,7 +6,6 @@ from dbms.ast_nodes import (
     CreateTableStmt,
     DeleteStmt,
     InsertStmt,
-    SelectResult,
     SelectStmt,
     UpdateStmt,
     WhereAnd,
@@ -20,8 +19,8 @@ from dbms.errors import (
     DuplicateTableError,
     TableNotFoundError,
 )
-from dbms.executor import Executor
-from dbms.storage import InMemoryStorage
+from dbms.executor import Executor, SelectResult
+from dbms.in_memory_storage import InMemoryStorage
 
 
 @pytest.fixture

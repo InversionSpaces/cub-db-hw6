@@ -17,6 +17,10 @@ class ColumnMismatchError(DBMSError):
     pass
 
 
+class RowTooLargeError(DBMSError):
+    pass
+
+
 class DuplicateTableError(DBMSError):
     pass
 
@@ -26,4 +30,8 @@ class DuplicateColumnError(DBMSError):
 
 
 class RowNotFoundError(DBMSError):
+    pass
+
+
+class CorruptFileError(DBMSError):
     pass
