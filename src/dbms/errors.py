@@ -19,3 +19,11 @@ class ColumnMismatchError(DBMSError):
 
 class DuplicateTableError(DBMSError):
     pass
+
+
+class DuplicateColumnError(DBMSError):
+    pass
+
+
+class RowNotFoundError(DBMSError):
+    pass

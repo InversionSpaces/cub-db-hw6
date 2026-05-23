@@ -87,7 +87,6 @@ Row = tuple[str, ...]
 class TableDef:
     name: str
     columns: tuple[str, ...]
-    rows: list[Row]
 
 
 @dataclass
