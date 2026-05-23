@@ -1,0 +1,51 @@
+[project]
+name = "dbms"
+version = "0.1.0"
+description = "Simple file-based DBMS with slotted-page storage"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "antlr4-python3-runtime>=4.13.2",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+]
+
+[tool.mypy]
+files = ["src/dbms", "tests"]
+strict = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "dbms.generated.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "antlr4.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "dbms.visitor"
+allow_untyped_calls = true
+allow_untyped_defs = true
+disable_error_code = ["misc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[project.scripts]
+dbms = "dbms.cli:main"
