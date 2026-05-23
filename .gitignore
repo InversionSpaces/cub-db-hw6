@@ -39,9 +39,6 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
-# ANTLR tool jar
-antlr4-tool.jar
-
 # Generated ANTLR artifacts (tracked separately, but interim files)
 *.interp
 *.tokens

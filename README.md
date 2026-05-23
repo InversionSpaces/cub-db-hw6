@@ -1,6 +1,6 @@
 # Simple File-Based DBMS
 
-A Python file-based DBMS supporting multiple named tables with string-only columns. Uses a PostgreSQL-style slotted page binary storage format and ANTLR for SQL parsing. Java is required to regenerate the parser.
+A Python file-based DBMS supporting multiple named tables with string-only columns. Uses a PostgreSQL-style slotted page binary storage format and ANTLR for SQL parsing.
 
 ## Project Structure
 
@@ -31,8 +31,7 @@ hw6/
 ## Dependencies
 
 - Python >=3.11
-- Java (for ANTLR parser generation)
-- `antlr4-python3-runtime`, dev: `mypy`, `pytest`
+- `antlr4-python3-runtime`, dev: `antlr4-tools`, `mypy`, `pytest`
 
 ## Commands
 
