@@ -21,6 +21,7 @@ from dbms.errors import (
 )
 from dbms.executor import Executor, SelectResult
 from dbms.in_memory_storage import InMemoryStorage
+from dbms.storage_protocol import TableName
 
 
 @pytest.fixture
@@ -37,8 +38,8 @@ class TestCreateTable:
     def test_create_table(self, executor: Executor, store: InMemoryStorage) -> None:
         stmt = CreateTableStmt(name="t", columns=("a", "b"))
         assert executor.execute(stmt) is None
-        assert store.table_exists("t")
-        assert store.get_columns("t") == ("a", "b")
+        assert store.table_exists(TableName("t"))
+        assert store.get_columns(TableName("t")) == ("a", "b")
 
     def test_duplicate_table(self, executor: Executor) -> None:
         executor.create_table(CreateTableStmt(name="t", columns=("a",)))
@@ -60,14 +61,14 @@ class TestInsert:
     def test_insert_row(self, executor: Executor, store: InMemoryStorage) -> None:
         executor.create_table(CreateTableStmt(name="t", columns=("a", "b")))
         executor.insert(InsertStmt(table="t", columns=("a", "b"), values=("x", "y")))
-        rows = list(store.scan_rows("t"))
+        rows = list(store.scan_rows(TableName("t")))
         assert len(rows) == 1
         assert rows[0][1] == ("x", "y")
 
     def test_insert_column_reorder(self, executor: Executor, store: InMemoryStorage) -> None:
         executor.create_table(CreateTableStmt(name="t", columns=("a", "b")))
         executor.insert(InsertStmt(table="t", columns=("b", "a"), values=("y", "x")))
-        rows = list(store.scan_rows("t"))
+        rows = list(store.scan_rows(TableName("t")))
         assert rows[0][1] == ("x", "y")
 
     def test_table_not_found(self, executor: Executor) -> None:
@@ -448,8 +449,8 @@ class TestLifecycleSequences:
 
 
 def _make_users_executor(store: InMemoryStorage) -> Executor:
-    store.create_table("users", ("name", "age", "city"))
-    store.insert_row("users", ("Alice", "30", "NYC"))
-    store.insert_row("users", ("Bob", "25", "LA"))
-    store.insert_row("users", ("Carol", "30", "NYC"))
+    store.create_table(TableName("users"), ("name", "age", "city"))
+    store.insert_row(TableName("users"), ("Alice", "30", "NYC"))
+    store.insert_row(TableName("users"), ("Bob", "25", "LA"))
+    store.insert_row(TableName("users"), ("Carol", "30", "NYC"))
     return Executor(store)

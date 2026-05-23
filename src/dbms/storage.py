@@ -17,7 +17,7 @@ from dbms.errors import (
     RowTooLargeError,
     TableNotFoundError,
 )
-from dbms.storage_protocol import PageId, RowId, SlotId, Storage
+from dbms.storage_protocol import ItemOffset, PageId, RowId, SlotId, Storage, TableName
 
 __all__ = [
     "FileStorage",
@@ -26,6 +26,7 @@ __all__ = [
     "SlotId",
     "StorageRow",
     "TableMeta",
+    "TableName",
     "PAGE_SIZE",
     "PAGE_TYPE_DATA",
     "PAGE_TYPE_META",
@@ -79,12 +80,12 @@ class StorageRow:
 
 @dataclass
 class TableMeta:
-    name: str
+    name: TableName
     columns: tuple[str, ...]
-    head_data_page: int
+    head_data_page: PageId
 
     @staticmethod
-    def serialize(name: str, columns: tuple[str, ...], head_data_page: int) -> bytes:
+    def serialize(name: TableName, columns: tuple[str, ...], head_data_page: PageId) -> bytes:
         name_bytes = name.encode("utf-8")
         col_bytes_list = [col.encode("utf-8") for col in columns]
         total = 2 + len(name_bytes) + 2
@@ -112,7 +113,7 @@ class TableMeta:
         offset = 0
         name_len = struct.unpack_from("<H", mv, offset)[0]
         offset += 2
-        name = mv[offset : offset + name_len].tobytes().decode("utf-8")
+        name = TableName(mv[offset : offset + name_len].tobytes().decode("utf-8"))
         offset += name_len
         num_cols = struct.unpack_from("<H", mv, offset)[0]
         offset += 2
@@ -123,11 +124,11 @@ class TableMeta:
             col = mv[offset : offset + col_len].tobytes().decode("utf-8")
             offset += col_len
             columns.append(col)
-        head_data_page = struct.unpack_from("<I", mv, offset)[0]
+        head_data_page = PageId(struct.unpack_from("<I", mv, offset)[0])
         return TableMeta(name=name, columns=tuple(columns), head_data_page=head_data_page)
 
     @staticmethod
-    def estimate_size(name: str, columns: tuple[str, ...]) -> int:
+    def estimate_size(name: TableName, columns: tuple[str, ...]) -> int:
         name_bytes = name.encode("utf-8")
         size = 2 + len(name_bytes) + 2
         for col in columns:
@@ -141,9 +142,9 @@ class TableMeta:
 class PageHeader:
     page_type: int
     num_items: int
-    pd_lower: int
-    pd_upper: int
-    next_page: int
+    pd_lower: ItemOffset
+    pd_upper: ItemOffset
+    next_page: PageId
 
     def serialize(self) -> bytes:
         return struct.pack(
@@ -164,9 +165,9 @@ class PageHeader:
             PageHeader(
                 page_type=page_type,
                 num_items=num_items,
-                pd_lower=pd_lower,
-                pd_upper=pd_upper,
-                next_page=next_page,
+                pd_lower=ItemOffset(pd_lower),
+                pd_upper=ItemOffset(pd_upper),
+                next_page=PageId(next_page),
             ),
             offset + HEADER_SIZE,
         )
@@ -174,7 +175,7 @@ class PageHeader:
 
 @dataclass
 class ItemId:
-    offset: int
+    offset: ItemOffset
     length: int
 
 
@@ -191,7 +192,7 @@ class _ItemView:
         if val is not None:
             return val
         item_id = self._page.item_ids[i]
-        if item_id.offset == 0:
+        if item_id.offset == ItemOffset(0):
             return b""
         assert self._page._raw is not None
         return self._page._raw[item_id.offset : item_id.offset + item_id.length]
@@ -239,17 +240,17 @@ class Page:
     def items(self, value: list[bytes | None]) -> None:
         self._items = value
 
-    def is_deleted(self, slot_id: int) -> bool:
-        return self.item_ids[slot_id].offset == 0
+    def is_deleted(self, slot_id: SlotId) -> bool:
+        return self.item_ids[slot_id].offset == ItemOffset(0)
 
-    def delete_item(self, slot_id: int) -> None:
-        self.item_ids[slot_id].offset = 0
+    def delete_item(self, slot_id: SlotId) -> None:
+        self.item_ids[slot_id].offset = ItemOffset(0)
         self.item_ids[slot_id].length = 0
         self._items[slot_id] = b""
 
     def iter_nondeleted(self) -> Iterator[bytes]:
         for i, item_id in enumerate(self.item_ids):
-            if item_id.offset != 0:
+            if item_id.offset != ItemOffset(0):
                 yield self.items[i]
 
     @staticmethod
@@ -257,9 +258,9 @@ class Page:
         header = PageHeader(
             page_type=page_type,
             num_items=0,
-            pd_lower=HEADER_SIZE,
-            pd_upper=PAGE_SIZE,
-            next_page=0,
+            pd_lower=ItemOffset(HEADER_SIZE),
+            pd_upper=ItemOffset(PAGE_SIZE),
+            next_page=PageId(0),
         )
         return Page(header, [], [])
 
@@ -267,12 +268,12 @@ class Page:
         return self.header.pd_upper - self.header.pd_lower
 
     def add_item(self, item_bytes: bytes) -> None:
-        offset = self.header.pd_upper - len(item_bytes)
+        offset = ItemOffset(self.header.pd_upper - len(item_bytes))
         item_id = ItemId(offset=offset, length=len(item_bytes))
         self.item_ids.append(item_id)
         self.items.append(item_bytes)
         self.header.num_items += 1
-        self.header.pd_lower += ITEMID_SIZE
+        self.header.pd_lower = ItemOffset(self.header.pd_lower + ITEMID_SIZE)
         self.header.pd_upper = offset
 
     def serialize(self) -> bytes:
@@ -299,14 +300,14 @@ class Page:
                 item_id.length,
             )
         for i, item_id in enumerate(self.item_ids):
-            if item_id.offset == 0:
+            if item_id.offset == ItemOffset(0):
                 continue
             item_bytes = self.items[i]
             buf[item_id.offset : item_id.offset + item_id.length] = item_bytes
         return bytes(buf)
 
     @staticmethod
-    def deserialize(data: bytes, page_num: int) -> Page:
+    def deserialize(data: bytes, page_num: PageId) -> Page:
         if len(data) < HEADER_SIZE:
             raise CorruptFileError(f"Page {page_num} too small")
 
@@ -340,7 +341,7 @@ class Page:
                     raise CorruptFileError(
                         f"Page {page_num}: item {i} inside free space"
                     )
-            item_ids.append(ItemId(offset=off, length=length))
+            item_ids.append(ItemId(offset=ItemOffset(off), length=length))
 
         return Page(header, item_ids, [], _raw=data)
 
@@ -350,18 +351,18 @@ class FileStorage:
         self, path: Path, max_page_cache_size: int = DEFAULT_PAGE_CACHE_SIZE
     ) -> None:
         self._path = path
-        self._tables: dict[str, TableMeta] = {}
-        self._page_cache: OrderedDict[int, Page] = OrderedDict()
-        self._clean_pages: OrderedDict[int, None] = OrderedDict()
-        self._dirty_pages: set[int] = set()
-        self._pending_creates: dict[str, tuple[str, ...]] = {}
-        self._pending_inserts: dict[str, list[tuple[str, ...]]] = {}
-        self._pending_updates: dict[str, dict[RowId, tuple[str, ...]]] = {}
-        self._pending_deletes: dict[str, set[RowId]] = {}
-        self._next_page_id: int = 0
-        self._table_last_page: dict[str, int] = {}
-        self._page_to_table: dict[int, str] = {}
-        self._meta_last_page: int = 0
+        self._tables: dict[TableName, TableMeta] = {}
+        self._page_cache: OrderedDict[PageId, Page] = OrderedDict()
+        self._clean_pages: OrderedDict[PageId, None] = OrderedDict()
+        self._dirty_pages: set[PageId] = set()
+        self._pending_creates: dict[TableName, tuple[str, ...]] = {}
+        self._pending_inserts: dict[TableName, list[tuple[str, ...]]] = {}
+        self._pending_updates: dict[TableName, dict[RowId, tuple[str, ...]]] = {}
+        self._pending_deletes: dict[TableName, set[RowId]] = {}
+        self._next_page_id: PageId = PageId(0)
+        self._table_last_page: dict[TableName, PageId] = {}
+        self._page_to_table: dict[PageId, TableName] = {}
+        self._meta_last_page: PageId = PageId(0)
         self._max_page_cache_size = max_page_cache_size
 
         exists = path.exists()
@@ -372,7 +373,7 @@ class FileStorage:
                     f"File size {file_size} not a multiple of page size {PAGE_SIZE}"
                 )
             self._fd = open(path, "r+b")
-            self._next_page_id = file_size // PAGE_SIZE
+            self._next_page_id = PageId(file_size // PAGE_SIZE)
             try:
                 self._load_metadata()
             except Exception:
@@ -383,13 +384,13 @@ class FileStorage:
             page0 = Page.empty(PAGE_TYPE_META)
             self._fd.write(page0.serialize())
             self._fd.flush()
-            self._page_cache[0] = page0
-            self._clean_pages[0] = None
-            self._next_page_id = 1
+            self._page_cache[PageId(0)] = page0
+            self._clean_pages[PageId(0)] = None
+            self._next_page_id = PageId(1)
 
     def _load_metadata(self) -> None:
-        page_id = 0
-        visited: set[int] = set()
+        page_id = PageId(0)
+        visited: set[PageId] = set()
         while True:
             if page_id in visited:
                 raise CorruptFileError(
@@ -405,7 +406,7 @@ class FileStorage:
                 meta = TableMeta.deserialize(item_bytes)
                 self._tables[meta.name] = meta
             next_page = page.header.next_page
-            if next_page == 0:
+            if next_page == PageId(0):
                 self._meta_last_page = page_id
                 break
             page_id = next_page
@@ -415,18 +416,18 @@ class FileStorage:
             self._page_to_table[last_pid] = name
             while True:
                 page = self._get_page(last_pid)
-                if page.header.next_page == 0:
+                if page.header.next_page == PageId(0):
                     break
                 last_pid = page.header.next_page
                 self._page_to_table[last_pid] = name
             self._table_last_page[name] = last_pid
 
-    def _require_table(self, name: str) -> TableMeta:
+    def _require_table(self, name: TableName) -> TableMeta:
         if name not in self._tables:
             raise TableNotFoundError(name)
         return self._tables[name]
 
-    def _evict_page(self, exclude: int | None = None) -> None:
+    def _evict_page(self, exclude: PageId | None = None) -> None:
         while len(self._page_cache) > self._max_page_cache_size:
             if not self._clean_pages:
                 return
@@ -439,7 +440,7 @@ class FileStorage:
             del self._page_cache[page_id]
             del self._clean_pages[page_id]
 
-    def _get_page(self, page_id: int) -> Page:
+    def _get_page(self, page_id: PageId) -> Page:
         if page_id < 0 or page_id >= self._next_page_id:
             raise CorruptFileError(
                 f"Page {page_id} out of bounds (0..{self._next_page_id - 1})"
@@ -457,16 +458,16 @@ class FileStorage:
         self._evict_page(exclude=page_id)
         return self._page_cache[page_id]
 
-    def _mark_dirty(self, page_id: int) -> None:
+    def _mark_dirty(self, page_id: PageId) -> None:
         self._dirty_pages.add(page_id)
         self._clean_pages.pop(page_id, None)
 
-    def _allocate_page_id(self) -> int:
+    def _allocate_page_id(self) -> PageId:
         pid = self._next_page_id
-        self._next_page_id += 1
+        self._next_page_id = PageId(self._next_page_id + 1)
         return pid
 
-    def _allocate_page(self, page_type: int) -> int:
+    def _allocate_page(self, page_type: int) -> PageId:
         pid = self._allocate_page_id()
         page = Page.empty(page_type)
         self._page_cache[pid] = page
@@ -475,14 +476,14 @@ class FileStorage:
         self._evict_page()
         return pid
 
-    def _write_page(self, page_id: int) -> None:
+    def _write_page(self, page_id: PageId) -> None:
         page = self._page_cache.get(page_id)
         if page is None:
             return
         self._fd.seek(page_id * PAGE_SIZE)
         self._fd.write(page.serialize())
 
-    def _append_data_page(self, table_name: str) -> int:
+    def _append_data_page(self, table_name: TableName) -> PageId:
         old_last = self._table_last_page.get(table_name)
         new_pid = self._allocate_page(PAGE_TYPE_DATA)
         self._page_to_table[new_pid] = table_name
@@ -493,23 +494,23 @@ class FileStorage:
         self._table_last_page[table_name] = new_pid
         return new_pid
 
-    def _find_space_in_table(self, table_name: str, needed: int) -> int | None:
+    def _find_space_in_table(self, table_name: TableName, needed: int) -> PageId | None:
         meta = self._tables[table_name]
         page_id = meta.head_data_page
-        while page_id != 0:
+        while page_id != PageId(0):
             page = self._get_page(page_id)
             if page.free_space() >= needed:
                 return page_id
             page_id = page.header.next_page
         return None
 
-    def _ensure_data_page(self, table_name: str, needed: int) -> int:
+    def _ensure_data_page(self, table_name: TableName, needed: int) -> PageId:
         found = self._find_space_in_table(table_name, needed)
         if found is not None:
             return found
         return self._append_data_page(table_name)
 
-    def create_table(self, name: str, columns: Sequence[str]) -> None:
+    def create_table(self, name: TableName, columns: Sequence[str]) -> None:
         if name in self._tables:
             raise DuplicateTableError(name)
         head_pid = self._allocate_page(PAGE_TYPE_DATA)
@@ -520,13 +521,16 @@ class FileStorage:
         self._table_last_page[name] = head_pid
         self._pending_creates[name] = tuple(columns)
 
-    def table_exists(self, name: str) -> bool:
+    def table_exists(self, name: TableName) -> bool:
         return name in self._tables
 
-    def get_columns(self, name: str) -> Sequence[str]:
+    def get_columns(self, name: TableName) -> Sequence[str]:
         return self._require_table(name).columns
 
-    def insert_row(self, table: str, row: tuple[str, ...]) -> None:
+    def get_tables(self) -> Sequence[TableName]:
+        return list(self._tables.keys())
+
+    def insert_row(self, table: TableName, row: tuple[str, ...]) -> None:
         """Stage a row insertion. Not visible until commit."""
         meta = self._require_table(table)
         if len(row) != len(meta.columns):
@@ -541,22 +545,22 @@ class FileStorage:
         self._pending_inserts.setdefault(table, []).append(row)
 
     def scan_rows(
-        self, table: str
+        self, table: TableName
     ) -> Iterator[tuple[RowId, tuple[str, ...]]]:
         self._require_table(table)
         meta = self._tables[table]
         page_id = meta.head_data_page
-        while page_id != 0:
+        while page_id != PageId(0):
             page = self._get_page(page_id)
             for i in range(len(page.item_ids)):
-                if page.is_deleted(i):
+                if page.is_deleted(SlotId(i)):
                     continue
                 row = StorageRow.deserialize(page.items[i])
-                yield ((PageId(page_id), SlotId(i)), row)
+                yield ((page_id, SlotId(i)), row)
             page_id = page.header.next_page
 
     def mark_update(
-        self, table: str, row_id: RowId, new_row: tuple[str, ...]
+        self, table: TableName, row_id: RowId, new_row: tuple[str, ...]
     ) -> None:
         """Stage a row update. Not visible until commit.
         
@@ -576,7 +580,7 @@ class FileStorage:
                 )
         self._pending_updates.setdefault(table, {})[row_id] = new_row
 
-    def mark_delete(self, table: str, row_id: RowId) -> None:
+    def mark_delete(self, table: TableName, row_id: RowId) -> None:
         """Stage a row deletion. Not visible until commit.
         
         Calling both mark_update and mark_delete on same RowId is undefined.
@@ -661,7 +665,7 @@ class FileStorage:
         count = 1
         free = Page.empty(PAGE_TYPE_META).free_space()
         for meta in metas:
-            meta_bytes = TableMeta.serialize(meta.name, meta.columns, 0)
+            meta_bytes = TableMeta.serialize(meta.name, meta.columns, PageId(0))
             needed = ITEMID_SIZE + len(meta_bytes)
             if free < needed:
                 count += 1
@@ -717,9 +721,9 @@ class FileStorage:
 
     def _write_metadata_to_fd(
         self, fd: BinaryIO, metas: list[TableMeta]
-    ) -> int:
+    ) -> PageId:
         meta_page = Page.empty(PAGE_TYPE_META)
-        current_pid = 0
+        current_pid = PageId(0)
 
         for meta in metas:
             meta_bytes = TableMeta.serialize(
@@ -728,7 +732,7 @@ class FileStorage:
             needed = ITEMID_SIZE + len(meta_bytes)
             if meta_page.free_space() < needed:
                 fd.seek(current_pid * PAGE_SIZE)
-                new_pid = current_pid + 1
+                new_pid = PageId(current_pid + 1)
                 meta_page.header.next_page = new_pid
                 fd.write(meta_page.serialize())
                 meta_page = Page.empty(PAGE_TYPE_META)
@@ -740,17 +744,17 @@ class FileStorage:
         return current_pid
 
     def _vacuum_stream_table(
-        self, name: str, fd: BinaryIO, running_pid: int
-    ) -> tuple[int, int, int]:
+        self, name: TableName, fd: BinaryIO, running_pid: PageId
+    ) -> tuple[PageId, PageId, PageId]:
         meta = self._tables[name]
         src_page_id = meta.head_data_page
         head_pid = running_pid
 
         current_out_page = Page.empty(PAGE_TYPE_DATA)
         current_out_pid = running_pid
-        running_pid += 1
+        running_pid = PageId(running_pid + 1)
 
-        while src_page_id != 0:
+        while src_page_id != PageId(0):
             src_page = self._get_page(src_page_id)
             for item_bytes in src_page.iter_nondeleted():
                 needed = ITEMID_SIZE + len(item_bytes)
@@ -759,7 +763,7 @@ class FileStorage:
                     fd.seek(current_out_pid * PAGE_SIZE)
                     fd.write(current_out_page.serialize())
                     current_out_pid = running_pid
-                    running_pid += 1
+                    running_pid = PageId(running_pid + 1)
                     current_out_page = Page.empty(PAGE_TYPE_DATA)
                 current_out_page.add_item(item_bytes)
             src_page_id = src_page.header.next_page
@@ -772,15 +776,15 @@ class FileStorage:
     def _vacuum_build_compacted_file(
         self,
         tmp_fd: BinaryIO,
-        table_order: list[str],
-        table_columns: dict[str, tuple[str, ...]],
+        table_order: list[TableName],
+        table_columns: dict[TableName, tuple[str, ...]],
         num_meta_pages: int,
-    ) -> tuple[list[TableMeta], dict[str, int], int, int]:
+    ) -> tuple[list[TableMeta], dict[TableName, PageId], PageId, PageId]:
         tmp_fd.write(b"\x00" * (num_meta_pages * PAGE_SIZE))
 
-        running_pid = num_meta_pages
-        table_heads: dict[str, int] = {}
-        table_last_pids: dict[str, int] = {}
+        running_pid = PageId(num_meta_pages)
+        table_heads: dict[TableName, PageId] = {}
+        table_last_pids: dict[TableName, PageId] = {}
 
         for name in table_order:
             head_pid, last_pid, running_pid = self._vacuum_stream_table(
@@ -813,7 +817,7 @@ class FileStorage:
         table_columns = {name: self._tables[name].columns for name in table_order}
 
         meta_list = [
-            TableMeta(name=n, columns=table_columns[n], head_data_page=0)
+            TableMeta(name=n, columns=table_columns[n], head_data_page=PageId(0))
             for n in table_order
         ]
         num_meta_pages = self._count_metadata_pages(meta_list)
@@ -847,7 +851,7 @@ class FileStorage:
         self._page_to_table.clear()
         for name, meta in self._tables.items():
             page_id = meta.head_data_page
-            while page_id != 0:
+            while page_id != PageId(0):
                 self._page_to_table[page_id] = name
                 page = self._get_page(page_id)
                 page_id = page.header.next_page

@@ -20,7 +20,7 @@ from dbms.ast_nodes import (
     WhereExpr,
     WhereOr,
 )
-from dbms.storage_protocol import RowId
+from dbms.storage_protocol import RowId, TableName
 from dbms.errors import (
     ColumnMismatchError,
     DuplicateColumnError,
@@ -60,14 +60,16 @@ class Executor:
             if col in seen:
                 raise DuplicateColumnError(col)
             seen.add(col)
-        if self._store.table_exists(stmt.name):
+        table_name = TableName(stmt.name)
+        if self._store.table_exists(table_name):
             raise DuplicateTableError(stmt.name)
-        self._store.create_table(stmt.name, stmt.columns)
+        self._store.create_table(table_name, stmt.columns)
 
     def insert(self, stmt: InsertStmt) -> int:
-        if not self._store.table_exists(stmt.table):
+        table_name = TableName(stmt.table)
+        if not self._store.table_exists(table_name):
             raise TableNotFoundError(stmt.table)
-        columns = self._store.get_columns(stmt.table)
+        columns = self._store.get_columns(table_name)
         if len(stmt.columns) != len(stmt.values):
             raise ColumnMismatchError(
                 f"{len(stmt.columns)} columns but {len(stmt.values)} values"
@@ -81,7 +83,7 @@ class Executor:
             stmt.values[col_index[columns[i]]]
             for i in range(len(columns))
         )
-        self._store.insert_row(stmt.table, row)
+        self._store.insert_row(table_name, row)
         return 1
 
     def _validate_where_columns(self, where: WhereExpr | None, columns: Sequence[str]) -> None:
@@ -101,9 +103,10 @@ class Executor:
                     self._validate_where_columns(op, columns)
 
     def select(self, stmt: SelectStmt) -> SelectResult:
-        if not self._store.table_exists(stmt.table):
+        table_name = TableName(stmt.table)
+        if not self._store.table_exists(table_name):
             raise TableNotFoundError(stmt.table)
-        columns = self._store.get_columns(stmt.table)
+        columns = self._store.get_columns(table_name)
         self._validate_where_columns(stmt.where, columns)
         if stmt.columns == "*":
             out_cols: Sequence[str] = columns
@@ -115,15 +118,16 @@ class Executor:
             out_cols = stmt.columns
         col_index = {c: i for i, c in enumerate(columns)}
         result_rows: list[Row] = []
-        for _, row in self._store.scan_rows(stmt.table):
+        for _, row in self._store.scan_rows(table_name):
             if self._evaluate_where(stmt.where, row, columns, col_index):
                 result_rows.append(self._project(row, out_cols, col_index))
         return SelectResult(rows=tuple(result_rows), columns=tuple(out_cols))
 
     def update(self, stmt: UpdateStmt) -> int:
-        if not self._store.table_exists(stmt.table):
+        table_name = TableName(stmt.table)
+        if not self._store.table_exists(table_name):
             raise TableNotFoundError(stmt.table)
-        columns = self._store.get_columns(stmt.table)
+        columns = self._store.get_columns(table_name)
         self._validate_where_columns(stmt.where, columns)
         for assign in stmt.assignments:
             col = assign.column if isinstance(assign, Assignment) else assign.left
@@ -133,26 +137,27 @@ class Executor:
                 raise ColumnMismatchError(assign.right)
         col_index = {c: i for i, c in enumerate(columns)}
         count = 0
-        for row_id, row in self._store.scan_rows(stmt.table):
+        for row_id, row in self._store.scan_rows(table_name):
             if not self._evaluate_where(stmt.where, row, columns, col_index):
                 continue
             new_row = self._apply_assignments(stmt.assignments, row, columns)
-            self._store.mark_update(stmt.table, row_id, new_row)
+            self._store.mark_update(table_name, row_id, new_row)
             count += 1
         if count > 0:
             self._store.commit()
         return count
 
     def delete(self, stmt: DeleteStmt) -> int:
-        if not self._store.table_exists(stmt.table):
+        table_name = TableName(stmt.table)
+        if not self._store.table_exists(table_name):
             raise TableNotFoundError(stmt.table)
-        columns = self._store.get_columns(stmt.table)
+        columns = self._store.get_columns(table_name)
         self._validate_where_columns(stmt.where, columns)
         col_index = {c: i for i, c in enumerate(columns)}
         count = 0
-        for row_id, row in self._store.scan_rows(stmt.table):
+        for row_id, row in self._store.scan_rows(table_name):
             if self._evaluate_where(stmt.where, row, columns, col_index):
-                self._store.mark_delete(stmt.table, row_id)
+                self._store.mark_delete(table_name, row_id)
                 count += 1
         if count > 0:
             self._store.commit()
