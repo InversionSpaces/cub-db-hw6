@@ -1,0 +1,12 @@
+[run]
+source = src/dbms
+omit = src/dbms/generated/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+
+[html]
+directory = htmlcov
