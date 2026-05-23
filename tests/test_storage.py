@@ -362,6 +362,7 @@ class TestFileStorageCreateTable:
     def test_create_and_scan(self, file_store: FileStorage) -> None:
         file_store.create_table("t", ("a", "b"))
         file_store.insert_row("t", ("x", "y"))
+        file_store.commit()
         rows = list(file_store.scan_rows("t"))
         assert len(rows) == 1
 
