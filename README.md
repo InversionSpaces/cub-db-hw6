@@ -75,7 +75,7 @@ The system maintains an **LRU page cache** to avoid repeated disk I/O. Clean pag
 
 The system uses **statement-level auto-commit** where each SQL statement commits independently. Operations are first staged in memory, then applied to pages and persisted to disk with fsync for durability.
 
-There is no support for concurrent access (single-writer model). Updates are performed in-place when the new row fits in the old slot, otherwise the old slot is deleted and the row inserted elsewhere.
+There is no support for concurrent access (single-writer model). Updates are performed in-place when the new row fits in the old slot, otherwise the old slot is deleted and the row inserted elsewhere. **Duplicate rows are allowed** as there are no uniqueness constraints (no PRIMARY KEY or UNIQUE support).
 
 ## Project Structure
 
