@@ -1,6 +1,6 @@
 # Simple File-Based DBMS
 
-A Python file-based DBMS supporting multiple named tables with string-only columns.
+A Python file-based DBMS supporting multiple named tables with typed columns (INT, BOOL, TEXT).
 
 ## CLI Usage
 
@@ -17,14 +17,18 @@ $ uv run python main.py mydb.db
 DBMS REPL. Database: mydb.db
 Type 'exit' or 'quit' to exit.
 
-dbms> CREATE TABLE users (name, age)
+dbms> CREATE TABLE users (name TEXT, age INT)
 dbms> OK
-dbms> INSERT INTO users (name, age) VALUES ('Alice', '30')
+dbms> INSERT INTO users (name, age) VALUES ('Alice', 30)
 dbms> Affected rows: 1
+dbms> INSERT INTO users (name, age) VALUES ('Bob', 25), ('Charlie', 35)
+dbms> Affected rows: 2
 dbms> SELECT * FROM users
-dbms> name  | age
+dbms> name    | age
 dbms> -----------
-dbms> Alice | 30
+dbms> Alice   | 30
+dbms> Bob     | 25
+dbms> Charlie | 35
 dbms> 
 ```
 
@@ -41,21 +45,25 @@ dbms>
 ## SQL Syntax
 
 ```sql
-CREATE TABLE <name> (<col>, ...)
-INSERT INTO <name> (<col>, ...) VALUES (<val>, ...)
+CREATE TABLE <name> (<col> <type>, ...)
+INSERT INTO <name> (<col>, ...) VALUES (<val>, ...)[, (<val>, ...), ...]
 SELECT <col>, ... | * FROM <name> [WHERE <expr>]
 UPDATE <name> SET <col> = <val>, ... [WHERE <expr>]
 DELETE FROM <name> [WHERE <expr>]
 ```
 
+Supported column types: `INT`, `BOOL`, `TEXT`
+
+INSERT supports batch inserts with multiple value tuples.
+
 WHERE expressions support `AND`, `OR`, and parenthesized grouping:
 
 ```sql
-WHERE a = '1' AND b = '2' OR c = '3'
-WHERE (a = '1' OR b = '2') AND c = '3'
+WHERE a = 1 AND b = 2 OR c = 'text'
+WHERE (a = 1 OR b = 2) AND c = TRUE
 ```
 
-All values are string literals using single quotes. Double single quotes to escape: `'it''s'`.
+String literals use single quotes. Double single quotes to escape: `'it''s'`.
 
 ---
 
@@ -105,7 +113,9 @@ hw6/
     ├── test_visitor.py
     ├── test_executor.py
     ├── test_storage.py
-    └── test_cli.py
+    ├── test_cli.py
+    └── load/
+        └── test.py
 ```
 
 ## Commands
@@ -116,10 +126,13 @@ make lint
 make generate
 make clean
 make coverage
+make loadtest
 ```
 
 The `coverage` command generates a test coverage report using `coverage.py`.
 HTML report is written to `htmlcov/index.html`.
+
+The `loadtest` command runs the load test (`tests/load/test.py`).
 
 ## Dependencies
 
