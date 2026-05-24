@@ -9,19 +9,26 @@ from dbms.ast_nodes import (
     Assignment,
     AssignmentColEq,
     AssignmentExpr,
+    BoolValue,
+    ColumnDef,
+    ColumnType,
     CreateTableStmt,
     DeleteStmt,
     InsertStmt,
+    IntValue,
     SelectStmt,
     Statement,
+    TableDef,
+    TextValue,
     UpdateStmt,
+    Value,
     WhereAnd,
     WhereColEq,
     WhereEq,
     WhereExpr,
     WhereOr,
 )
-from dbms.errors import ParseError
+from dbms.errors import IntegerOverflowError, ParseError
 from dbms.generated.SimpleSQLLexer import SimpleSQLLexer
 from dbms.generated.SimpleSQLParser import SimpleSQLParser
 from dbms.generated.SimpleSQLVisitor import SimpleSQLVisitor
@@ -82,8 +89,26 @@ class _ASTVisitor(SimpleSQLVisitor):
 
     def visitCreateTable(self, ctx: SimpleSQLParser.CreateTableContext) -> CreateTableStmt:
         name = ctx.identifier().IDENTIFIER().getText()
-        columns = self.visitColumnList(ctx.columnList())
+        columns = self.visitColumnDefList(ctx.columnDefList())
         return CreateTableStmt(name=name, columns=columns)
+
+    def visitColumnDefList(self, ctx: SimpleSQLParser.ColumnDefListContext) -> tuple[ColumnDef, ...]:
+        column_defs = ctx.columnDef()
+        return tuple(self.visitColumnDef(cd) for cd in column_defs)
+
+    def visitColumnDef(self, ctx: SimpleSQLParser.ColumnDefContext) -> ColumnDef:
+        name = ctx.identifier().IDENTIFIER().getText()
+        col_type = self.visitTypeName(ctx.typeName())
+        return ColumnDef(name=name, type=col_type)
+
+    def visitTypeName(self, ctx: SimpleSQLParser.TypeNameContext) -> ColumnType:
+        if ctx.INT_T():
+            return ColumnType.INT
+        if ctx.BOOL_T():
+            return ColumnType.BOOL
+        if ctx.TEXT_T():
+            return ColumnType.TEXT
+        raise ParseError(f"Unknown type name at {ctx.start.line}:{ctx.start.column}")
 
     def visitInsertInto(self, ctx: SimpleSQLParser.InsertIntoContext) -> InsertStmt:
         table = ctx.identifier().IDENTIFIER().getText()
@@ -125,9 +150,30 @@ class _ASTVisitor(SimpleSQLVisitor):
         identifiers = ctx.identifier()
         return tuple(ident.IDENTIFIER().getText() for ident in identifiers)
 
-    def visitValueList(self, ctx: SimpleSQLParser.ValueListContext) -> tuple[str, ...]:
-        literals = ctx.stringLiteral()
-        return tuple(_strip_quotes(lit.STRING_LITERAL().getText()) for lit in literals)
+    def visitValueList(self, ctx: SimpleSQLParser.ValueListContext) -> tuple[Value, ...]:
+        value_lits = ctx.valueLit()
+        return tuple(self.visitValueLit(vl) for vl in value_lits)
+
+    def visitValueLit(self, ctx: SimpleSQLParser.ValueLitContext) -> Value:
+        if ctx.INTEGER_LITERAL():
+            text = ctx.INTEGER_LITERAL().getText()
+            try:
+                val = int(text)
+            except ValueError:
+                raise ParseError(f"Invalid integer literal: {text}")
+            if val < -2**31 or val > 2**31 - 1:
+                raise IntegerOverflowError(
+                    f"Integer {val} out of range for INT ({-2**31}..{2**31 - 1})"
+                )
+            return IntValue(value=val)
+        if ctx.TRUE():
+            return BoolValue(value=True)
+        if ctx.FALSE():
+            return BoolValue(value=False)
+        if ctx.stringLiteral():
+            raw = ctx.stringLiteral().STRING_LITERAL().getText()
+            return TextValue(value=_strip_quotes(raw))
+        raise ParseError(f"Unknown value literal at {ctx.start.line}:{ctx.start.column}")
 
     def visitWhereExpr(self, ctx: SimpleSQLParser.WhereExprContext) -> WhereExpr:
         return self.visitWhereOr(ctx.whereOr())
@@ -152,9 +198,9 @@ class _ASTVisitor(SimpleSQLVisitor):
         if ctx.LPAREN():
             return self.visitWhereExpr(ctx.whereExpr())
         identifiers = ctx.identifier()
-        if ctx.stringLiteral():
+        if ctx.valueLit():
             col = identifiers[0].IDENTIFIER().getText()
-            val = _strip_quotes(ctx.stringLiteral().STRING_LITERAL().getText())
+            val = self.visitValueLit(ctx.valueLit())
             return WhereEq(column=col, value=val)
         left = identifiers[0].IDENTIFIER().getText()
         right = identifiers[1].IDENTIFIER().getText()
@@ -169,8 +215,8 @@ class _ASTVisitor(SimpleSQLVisitor):
     def visitAssignment(self, ctx: SimpleSQLParser.AssignmentContext) -> AssignmentExpr:
         identifiers = ctx.identifier()
         col = identifiers[0].IDENTIFIER().getText()
-        if ctx.stringLiteral():
-            val = _strip_quotes(ctx.stringLiteral().STRING_LITERAL().getText())
+        if ctx.valueLit():
+            val = self.visitValueLit(ctx.valueLit())
             return Assignment(column=col, value=val)
         right = identifiers[1].IDENTIFIER().getText()
         return AssignmentColEq(left=col, right=right)

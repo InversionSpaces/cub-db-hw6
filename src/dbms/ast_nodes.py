@@ -1,16 +1,47 @@
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeAlias, Union
 
 
-Row = tuple[str, ...]
+class ColumnType(enum.Enum):
+    INT = "INT"
+    BOOL = "BOOL"
+    TEXT = "TEXT"
+
+
+@dataclass(frozen=True)
+class ColumnDef:
+    name: str
+    type: ColumnType
+
+
+@dataclass(frozen=True)
+class IntValue:
+    value: int
+
+
+@dataclass(frozen=True)
+class BoolValue:
+    value: bool
+
+
+@dataclass(frozen=True)
+class TextValue:
+    value: str
+
+
+Value: TypeAlias = IntValue | BoolValue | TextValue
+
+
+Row = tuple[Value, ...]
 
 
 @dataclass(frozen=True)
 class WhereEq:
     column: str
-    value: str
+    value: Value
 
 
 @dataclass(frozen=True)
@@ -35,7 +66,7 @@ WhereExpr = WhereEq | WhereColEq | WhereAnd | WhereOr
 @dataclass(frozen=True)
 class Assignment:
     column: str
-    value: str
+    value: Value
 
 
 @dataclass(frozen=True)
@@ -50,14 +81,14 @@ AssignmentExpr = Assignment | AssignmentColEq
 @dataclass(frozen=True)
 class CreateTableStmt:
     name: str
-    columns: tuple[str, ...]
+    columns: tuple[ColumnDef, ...]
 
 
 @dataclass(frozen=True)
 class InsertStmt:
     table: str
     columns: tuple[str, ...]
-    values: tuple[str, ...]
+    values: tuple[Value, ...]
 
 
 @dataclass(frozen=True)
@@ -86,6 +117,17 @@ Statement = CreateTableStmt | InsertStmt | SelectStmt | UpdateStmt | DeleteStmt
 @dataclass
 class TableDef:
     name: str
-    columns: tuple[str, ...]
+    columns: tuple[ColumnDef, ...]
+
+
+def value_type(v: Value) -> ColumnType:
+    """Return the ColumnType of a Value instance."""
+    if isinstance(v, IntValue):
+        return ColumnType.INT
+    if isinstance(v, BoolValue):
+        return ColumnType.BOOL
+    if isinstance(v, TextValue):
+        return ColumnType.TEXT
+    raise TypeError(f"Unknown value type: {type(v)}")
 
 

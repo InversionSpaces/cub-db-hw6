@@ -49,8 +49,28 @@ class SimpleSQLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SimpleSQLParser#columnDef.
+    def visitColumnDef(self, ctx:SimpleSQLParser.ColumnDefContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SimpleSQLParser#columnDefList.
+    def visitColumnDefList(self, ctx:SimpleSQLParser.ColumnDefListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SimpleSQLParser#typeName.
+    def visitTypeName(self, ctx:SimpleSQLParser.TypeNameContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SimpleSQLParser#valueList.
     def visitValueList(self, ctx:SimpleSQLParser.ValueListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SimpleSQLParser#valueLit.
+    def visitValueLit(self, ctx:SimpleSQLParser.ValueLitContext):
         return self.visitChildren(ctx)
 
 

@@ -35,3 +35,15 @@ class RowNotFoundError(DBMSError):
 
 class CorruptFileError(DBMSError):
     pass
+
+
+class TypeMismatchError(DBMSError):
+    def __init__(self, column: str, expected: str, got: str) -> None:
+        self.column = column
+        self.expected = expected
+        self.got = got
+        super().__init__(f"Column '{column}' expected {expected}, got {got}")
+
+
+class IntegerOverflowError(DBMSError):
+    pass

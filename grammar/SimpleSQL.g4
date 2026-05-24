@@ -9,7 +9,7 @@ statement
     ;
 
 createTable
-    : CREATE TABLE identifier LPAREN columnList RPAREN
+    : CREATE TABLE identifier LPAREN columnDefList RPAREN
     ;
 
 insertInto
@@ -37,8 +37,29 @@ columnList
     : identifier (COMMA identifier)*
     ;
 
+columnDef
+    : identifier typeName
+    ;
+
+columnDefList
+    : columnDef (COMMA columnDef)*
+    ;
+
+typeName
+    : INT_T
+    | BOOL_T
+    | TEXT_T
+    ;
+
 valueList
-    : stringLiteral (COMMA stringLiteral)*
+    : valueLit (COMMA valueLit)*
+    ;
+
+valueLit
+    : INTEGER_LITERAL
+    | TRUE
+    | FALSE
+    | stringLiteral
     ;
 
 whereExpr
@@ -55,7 +76,7 @@ whereAnd
 
 whereAtom
     : LPAREN whereExpr RPAREN
-    | identifier EQ stringLiteral
+    | identifier EQ valueLit
     | identifier EQ identifier
     ;
 
@@ -64,7 +85,7 @@ assignmentList
     ;
 
 assignment
-    : identifier EQ stringLiteral
+    : identifier EQ valueLit
     | identifier EQ identifier
     ;
 
@@ -94,6 +115,14 @@ EQ:         '=';
 COMMA:      ',';
 LPAREN:     '(';
 RPAREN:     ')';
+
+INT_T:      'INT';
+BOOL_T:     'BOOL';
+TEXT_T:     'TEXT';
+TRUE:       'TRUE';
+FALSE:      'FALSE';
+
+INTEGER_LITERAL: '-'? [0-9]+ ;
 
 IDENTIFIER: [a-zA-Z_][a-zA-Z0-9_]*;
 STRING_LITERAL: '\'' (~['\r\n] | '\'\'')* '\'';

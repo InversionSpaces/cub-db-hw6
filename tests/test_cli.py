@@ -64,14 +64,15 @@ class TestCLITableOperations:
         assert "No tables" in stdout
 
     def test_tables_with_data(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name, age)\n.tables\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT, age INT)\n.tables\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "users" in stdout
-        assert "name, age" in stdout
+        assert "name TEXT" in stdout
+        assert "age INT" in stdout
 
     def test_tables_case_insensitive(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\ntables\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\ntables\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "users" in stdout
@@ -79,44 +80,52 @@ class TestCLITableOperations:
 
 class TestCLICreateTable:
     def test_create_table_simple(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name, age)\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT, age INT)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "OK" in stdout
 
     def test_create_table_single_column(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "OK" in stdout
 
     def test_create_multiple_tables(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nCREATE TABLE posts (title)\n.tables\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nCREATE TABLE posts (title TEXT)\n.tables\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "users" in stdout
         assert "posts" in stdout
 
     def test_create_duplicate_table_error(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nCREATE TABLE users (age)\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nCREATE TABLE users (age INT)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Error:" in stdout
 
+    def test_tables_shows_all_column_types(self, db_file: Path) -> None:
+        input_text = "CREATE TABLE users (id INT, name TEXT, active BOOL)\n.tables\nexit\n"
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "id INT" in stdout
+        assert "name TEXT" in stdout
+        assert "active BOOL" in stdout
+
 
 class TestCLIInsert:
     def test_insert_single_row(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name, age)\nINSERT INTO users (name, age) VALUES ('Alice', '30')\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT, age INT)\nINSERT INTO users (name, age) VALUES ('Alice', 30)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Affected rows: 1" in stdout
 
     def test_insert_multiple_rows(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "INSERT INTO users (name, age) VALUES ('Bob', '25')\n"
-            "INSERT INTO users (name, age) VALUES ('Carol', '35')\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
+            "INSERT INTO users (name, age) VALUES ('Carol', 35)\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -124,13 +133,31 @@ class TestCLIInsert:
         assert stdout.count("Affected rows: 1") == 3
 
     def test_insert_with_escaped_quotes(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nINSERT INTO users (name) VALUES ('it''s')\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nINSERT INTO users (name) VALUES ('it''s')\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Affected rows: 1" in stdout
 
     def test_insert_column_reorder(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name, age)\nINSERT INTO users (age, name) VALUES ('30', 'Alice')\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT, age INT)\nINSERT INTO users (age, name) VALUES (30, 'Alice')\nexit\n"
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Affected rows: 1" in stdout
+
+    def test_insert_bool_value_true(self, db_file: Path) -> None:
+        input_text = "CREATE TABLE users (id INT, active BOOL)\nINSERT INTO users (id, active) VALUES (1, TRUE)\nexit\n"
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Affected rows: 1" in stdout
+
+    def test_insert_bool_value_false(self, db_file: Path) -> None:
+        input_text = "CREATE TABLE users (id INT, active BOOL)\nINSERT INTO users (id, active) VALUES (1, FALSE)\nexit\n"
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Affected rows: 1" in stdout
+
+    def test_insert_negative_int(self, db_file: Path) -> None:
+        input_text = "CREATE TABLE users (id INT)\nINSERT INTO users (id) VALUES (-123)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Affected rows: 1" in stdout
@@ -138,15 +165,15 @@ class TestCLIInsert:
 
 class TestCLISelect:
     def test_select_empty_table(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nSELECT * FROM users\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nSELECT * FROM users\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "No rows" in stdout
 
     def test_select_all_columns(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
             "SELECT * FROM users\n"
             "exit\n"
         )
@@ -157,8 +184,8 @@ class TestCLISelect:
 
     def test_select_specific_columns(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age, city)\n"
-            "INSERT INTO users (name, age, city) VALUES ('Alice', '30', 'NYC')\n"
+            "CREATE TABLE users (name TEXT, age INT, city TEXT)\n"
+            "INSERT INTO users (name, age, city) VALUES ('Alice', 30, 'NYC')\n"
             "SELECT name, city FROM users\n"
             "exit\n"
         )
@@ -171,23 +198,23 @@ class TestCLISelect:
 
     def test_select_with_where(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "INSERT INTO users (name, age) VALUES ('Bob', '25')\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
             "SELECT * FROM users WHERE name = 'Alice'\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Alice" in stdout
-        select_idx = stdout.rfind("name  | age")
+        select_idx = stdout.rfind("name")
         exit_idx = stdout.rfind("exit")
         result_section = stdout[select_idx:exit_idx] if exit_idx > 0 else stdout[select_idx:]
         assert "Bob" not in result_section
 
     def test_select_multiple_rows(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name)\n"
+            "CREATE TABLE users (name TEXT)\n"
             "INSERT INTO users (name) VALUES ('Alice')\n"
             "INSERT INTO users (name) VALUES ('Bob')\n"
             "SELECT * FROM users\n"
@@ -198,13 +225,26 @@ class TestCLISelect:
         assert "Alice" in stdout
         assert "Bob" in stdout
 
+    def test_select_bool_values(self, db_file: Path) -> None:
+        input_text = (
+            "CREATE TABLE users (id INT, active BOOL)\n"
+            "INSERT INTO users (id, active) VALUES (1, TRUE)\n"
+            "INSERT INTO users (id, active) VALUES (2, FALSE)\n"
+            "SELECT * FROM users\n"
+            "exit\n"
+        )
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "TRUE" in stdout
+        assert "FALSE" in stdout
+
 
 class TestCLIUpdate:
     def test_update_single_row(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "UPDATE users SET age = '31'\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "UPDATE users SET age = 31\n"
             "SELECT * FROM users\n"
             "exit\n"
         )
@@ -215,10 +255,10 @@ class TestCLIUpdate:
 
     def test_update_with_where(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "INSERT INTO users (name, age) VALUES ('Bob', '25')\n"
-            "UPDATE users SET age = '99' WHERE name = 'Alice'\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
+            "UPDATE users SET age = 99 WHERE name = 'Alice'\n"
             "SELECT * FROM users\n"
             "exit\n"
         )
@@ -228,9 +268,9 @@ class TestCLIUpdate:
 
     def test_update_multiple_columns(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age, city)\n"
-            "INSERT INTO users (name, age, city) VALUES ('Alice', '30', 'NYC')\n"
-            "UPDATE users SET age = '31', city = 'LA'\n"
+            "CREATE TABLE users (name TEXT, age INT, city TEXT)\n"
+            "INSERT INTO users (name, age, city) VALUES ('Alice', 30, 'NYC')\n"
+            "UPDATE users SET age = 31, city = 'LA'\n"
             "SELECT * FROM users\n"
             "exit\n"
         )
@@ -240,11 +280,24 @@ class TestCLIUpdate:
         assert "31" in stdout
         assert "LA" in stdout
 
+    def test_update_bool_value(self, db_file: Path) -> None:
+        input_text = (
+            "CREATE TABLE users (id INT, active BOOL)\n"
+            "INSERT INTO users (id, active) VALUES (1, FALSE)\n"
+            "UPDATE users SET active = TRUE WHERE id = 1\n"
+            "SELECT * FROM users\n"
+            "exit\n"
+        )
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Affected rows: 1" in stdout
+        assert "TRUE" in stdout
+
 
 class TestCLIDelete:
     def test_delete_all_rows(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name)\n"
+            "CREATE TABLE users (name TEXT)\n"
             "INSERT INTO users (name) VALUES ('Alice')\n"
             "INSERT INTO users (name) VALUES ('Bob')\n"
             "DELETE FROM users\n"
@@ -258,9 +311,9 @@ class TestCLIDelete:
 
     def test_delete_with_where(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "INSERT INTO users (name, age) VALUES ('Bob', '25')\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
             "DELETE FROM users WHERE name = 'Alice'\n"
             "SELECT * FROM users\n"
             "exit\n"
@@ -280,7 +333,7 @@ class TestCLIVacuum:
 
     def test_vacuum_with_data(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name)\n"
+            "CREATE TABLE users (name TEXT)\n"
             "INSERT INTO users (name) VALUES ('Alice')\n"
             "VACUUM\n"
             "exit\n"
@@ -293,11 +346,11 @@ class TestCLIVacuum:
 class TestCLIWhereExpressions:
     def test_where_and(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age, city)\n"
-            "INSERT INTO users (name, age, city) VALUES ('Alice', '30', 'NYC')\n"
-            "INSERT INTO users (name, age, city) VALUES ('Bob', '30', 'LA')\n"
-            "INSERT INTO users (name, age, city) VALUES ('Carol', '25', 'NYC')\n"
-            "SELECT * FROM users WHERE age = '30' AND city = 'NYC'\n"
+            "CREATE TABLE users (name TEXT, age INT, city TEXT)\n"
+            "INSERT INTO users (name, age, city) VALUES ('Alice', 30, 'NYC')\n"
+            "INSERT INTO users (name, age, city) VALUES ('Bob', 30, 'LA')\n"
+            "INSERT INTO users (name, age, city) VALUES ('Carol', 25, 'NYC')\n"
+            "SELECT * FROM users WHERE age = 30 AND city = 'NYC'\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -306,10 +359,10 @@ class TestCLIWhereExpressions:
 
     def test_where_or(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age)\n"
-            "INSERT INTO users (name, age) VALUES ('Alice', '30')\n"
-            "INSERT INTO users (name, age) VALUES ('Bob', '25')\n"
-            "INSERT INTO users (name, age) VALUES ('Carol', '30')\n"
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
+            "INSERT INTO users (name, age) VALUES ('Carol', 30)\n"
             "SELECT * FROM users WHERE name = 'Alice' OR name = 'Carol'\n"
             "exit\n"
         )
@@ -320,21 +373,47 @@ class TestCLIWhereExpressions:
 
     def test_where_parentheses(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, age, active)\n"
-            "INSERT INTO users (name, age, active) VALUES ('Alice', '30', '1')\n"
-            "INSERT INTO users (name, age, active) VALUES ('Bob', '25', '0')\n"
-            "INSERT INTO users (name, age, active) VALUES ('Carol', '30', '0')\n"
-            "SELECT * FROM users WHERE (age = '30' OR active = '1') AND name = 'Alice'\n"
+            "CREATE TABLE users (name TEXT, age INT, active BOOL)\n"
+            "INSERT INTO users (name, age, active) VALUES ('Alice', 30, TRUE)\n"
+            "INSERT INTO users (name, age, active) VALUES ('Bob', 25, FALSE)\n"
+            "INSERT INTO users (name, age, active) VALUES ('Carol', 30, FALSE)\n"
+            "SELECT * FROM users WHERE (age = 30 OR active = TRUE) AND name = 'Alice'\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Alice" in stdout
 
+    def test_where_int_comparison(self, db_file: Path) -> None:
+        input_text = (
+            "CREATE TABLE users (name TEXT, age INT)\n"
+            "INSERT INTO users (name, age) VALUES ('Alice', 30)\n"
+            "INSERT INTO users (name, age) VALUES ('Bob', 25)\n"
+            "SELECT * FROM users WHERE age = 30\n"
+            "exit\n"
+        )
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Alice" in stdout
+        assert "Bob" not in stdout
+
+    def test_where_bool_comparison(self, db_file: Path) -> None:
+        input_text = (
+            "CREATE TABLE users (name TEXT, active BOOL)\n"
+            "INSERT INTO users (name, active) VALUES ('Alice', TRUE)\n"
+            "INSERT INTO users (name, active) VALUES ('Bob', FALSE)\n"
+            "SELECT * FROM users WHERE active = TRUE\n"
+            "exit\n"
+        )
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Alice" in stdout
+        assert "Bob" not in stdout
+
 
 class TestCLISessionPersistence:
     def test_data_persists_across_sessions(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nINSERT INTO users (name) VALUES ('Alice')\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nINSERT INTO users (name) VALUES ('Alice')\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
 
@@ -344,7 +423,7 @@ class TestCLISessionPersistence:
         assert "Alice" in stdout
 
     def test_tables_persist_across_sessions(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
 
@@ -362,13 +441,19 @@ class TestCLIErrorHandling:
         assert "Error:" in stdout
 
     def test_insert_into_nonexistent_table(self, db_file: Path) -> None:
-        input_text = "INSERT INTO nonexistent (a) VALUES ('x')\nexit\n"
+        input_text = "INSERT INTO nonexistent (a TEXT) VALUES ('x')\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Error:" in stdout
 
     def test_select_nonexistent_column(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nSELECT nonexistent FROM users\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nSELECT nonexistent FROM users\nexit\n"
+        stdout, code = run_cli(input_text, db_file)
+        assert code == 0
+        assert "Error:" in stdout
+
+    def test_type_mismatch_error(self, db_file: Path) -> None:
+        input_text = "CREATE TABLE users (id INT)\nINSERT INTO users (id) VALUES ('not_an_int')\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Error:" in stdout
@@ -377,12 +462,12 @@ class TestCLIErrorHandling:
 class TestCLIComplexScenarios:
     def test_create_insert_select_update_delete_sequence(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE products (id, name, price)\n"
-            "INSERT INTO products (id, name, price) VALUES ('1', 'Laptop', '1000')\n"
-            "INSERT INTO products (id, name, price) VALUES ('2', 'Phone', '500')\n"
+            "CREATE TABLE products (id INT, name TEXT, price INT)\n"
+            "INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 1000)\n"
+            "INSERT INTO products (id, name, price) VALUES (2, 'Phone', 500)\n"
             "SELECT * FROM products\n"
-            "UPDATE products SET price = '800' WHERE id = '1'\n"
-            "DELETE FROM products WHERE id = '2'\n"
+            "UPDATE products SET price = 800 WHERE id = 1\n"
+            "DELETE FROM products WHERE id = 2\n"
             "SELECT * FROM products\n"
             "exit\n"
         )
@@ -395,15 +480,15 @@ class TestCLIComplexScenarios:
 
     def test_multiple_tables_join_like_operations(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (id, name)\n"
-            "CREATE TABLE orders (user_id, amount)\n"
-            "INSERT INTO users (id, name) VALUES ('1', 'Alice')\n"
-            "INSERT INTO users (id, name) VALUES ('2', 'Bob')\n"
-            "INSERT INTO orders (user_id, amount) VALUES ('1', '100')\n"
-            "INSERT INTO orders (user_id, amount) VALUES ('1', '200')\n"
-            "INSERT INTO orders (user_id, amount) VALUES ('2', '50')\n"
+            "CREATE TABLE users (id INT, name TEXT)\n"
+            "CREATE TABLE orders (user_id INT, amount INT)\n"
+            "INSERT INTO users (id, name) VALUES (1, 'Alice')\n"
+            "INSERT INTO users (id, name) VALUES (2, 'Bob')\n"
+            "INSERT INTO orders (user_id, amount) VALUES (1, 100)\n"
+            "INSERT INTO orders (user_id, amount) VALUES (1, 200)\n"
+            "INSERT INTO orders (user_id, amount) VALUES (2, 50)\n"
             "SELECT * FROM users\n"
-            "SELECT * FROM orders WHERE user_id = '1'\n"
+            "SELECT * FROM orders WHERE user_id = 1\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -415,13 +500,13 @@ class TestCLIComplexScenarios:
 
     def test_bulk_insert_then_filter(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE numbers (value)\n"
-            "INSERT INTO numbers (value) VALUES ('1')\n"
-            "INSERT INTO numbers (value) VALUES ('2')\n"
-            "INSERT INTO numbers (value) VALUES ('3')\n"
-            "INSERT INTO numbers (value) VALUES ('4')\n"
-            "INSERT INTO numbers (value) VALUES ('5')\n"
-            "SELECT * FROM numbers WHERE value > '3'\n"
+            "CREATE TABLE numbers (value INT)\n"
+            "INSERT INTO numbers (value) VALUES (1)\n"
+            "INSERT INTO numbers (value) VALUES (2)\n"
+            "INSERT INTO numbers (value) VALUES (3)\n"
+            "INSERT INTO numbers (value) VALUES (4)\n"
+            "INSERT INTO numbers (value) VALUES (5)\n"
+            "SELECT * FROM numbers WHERE value > 3\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -431,7 +516,7 @@ class TestCLIComplexScenarios:
 
     def test_update_all_then_verify(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE items (name, status)\n"
+            "CREATE TABLE items (name TEXT, status TEXT)\n"
             "INSERT INTO items (name, status) VALUES ('A', 'pending')\n"
             "INSERT INTO items (name, status) VALUES ('B', 'pending')\n"
             "INSERT INTO items (name, status) VALUES ('C', 'pending')\n"
@@ -449,14 +534,14 @@ class TestCLIComplexScenarios:
 
 class TestCLIEdgeCases:
     def test_empty_string_values(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nINSERT INTO users (name) VALUES ('')\nSELECT * FROM users\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nINSERT INTO users (name) VALUES ('')\nSELECT * FROM users\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Affected rows: 1" in stdout
 
     def test_special_characters_in_values(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name)\n"
+            "CREATE TABLE users (name TEXT)\n"
             "INSERT INTO users (name) VALUES ('hello world')\n"
             "INSERT INTO users (name) VALUES ('test@test.com')\n"
             "INSERT INTO users (name) VALUES ('123-456-7890')\n"
@@ -470,21 +555,21 @@ class TestCLIEdgeCases:
         assert "123-456-7890" in stdout
 
     def test_unicode_values(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE users (name)\nINSERT INTO users (name) VALUES ('café')\nSELECT * FROM users\nexit\n"
+        input_text = "CREATE TABLE users (name TEXT)\nINSERT INTO users (name) VALUES ('café')\nSELECT * FROM users\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "café" in stdout
 
     def test_long_values(self, db_file: Path) -> None:
         long_string = "x" * 100
-        input_text = f"CREATE TABLE users (name)\nINSERT INTO users (name) VALUES ('{long_string}')\nSELECT * FROM users\nexit\n"
+        input_text = f"CREATE TABLE users (name TEXT)\nINSERT INTO users (name) VALUES ('{long_string}')\nSELECT * FROM users\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert long_string in stdout
 
     def test_nested_parentheses_where(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (a, b, c, d)\n"
+            "CREATE TABLE users (a TEXT, b TEXT, c TEXT, d TEXT)\n"
             "INSERT INTO users (a, b, c, d) VALUES ('1', '2', '3', '4')\n"
             "INSERT INTO users (a, b, c, d) VALUES ('5', '6', '7', '8')\n"
             "SELECT * FROM users WHERE ((a = '1' AND b = '2') OR (c = '7' AND d = '8'))\n"
@@ -497,11 +582,11 @@ class TestCLIEdgeCases:
 
     def test_complex_and_or_precedence(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE users (name, role, active)\n"
-            "INSERT INTO users (name, role, active) VALUES ('Admin', 'user', '1')\n"
-            "INSERT INTO users (name, role, active) VALUES ('Editor', 'admin', '0')\n"
-            "INSERT INTO users (name, role, active) VALUES ('Viewer', 'user', '1')\n"
-            "SELECT * FROM users WHERE role = 'user' OR role = 'admin' AND active = '1'\n"
+            "CREATE TABLE users (name TEXT, role TEXT, active BOOL)\n"
+            "INSERT INTO users (name, role, active) VALUES ('Admin', 'user', TRUE)\n"
+            "INSERT INTO users (name, role, active) VALUES ('Editor', 'admin', FALSE)\n"
+            "INSERT INTO users (name, role, active) VALUES ('Viewer', 'user', TRUE)\n"
+            "SELECT * FROM users WHERE role = 'user' OR role = 'admin' AND active = TRUE\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -513,11 +598,11 @@ class TestCLIEdgeCases:
 class TestCLIWorkflows:
     def test_create_drop_recreate(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE temp (id)\n"
-            "INSERT INTO temp (id) VALUES ('1')\n"
+            "CREATE TABLE temp (id INT)\n"
+            "INSERT INTO temp (id) VALUES (1)\n"
             "VACUUM\n"
-            "CREATE TABLE temp2 (id)\n"
-            "INSERT INTO temp2 (id) VALUES ('2')\n"
+            "CREATE TABLE temp2 (id INT)\n"
+            "INSERT INTO temp2 (id) VALUES (2)\n"
             ".tables\n"
             "exit\n"
         )
@@ -528,9 +613,9 @@ class TestCLIWorkflows:
 
     def test_batch_operations_across_tables(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE table1 (col1)\n"
-            "CREATE TABLE table2 (col2)\n"
-            "CREATE TABLE table3 (col3)\n"
+            "CREATE TABLE table1 (col1 TEXT)\n"
+            "CREATE TABLE table2 (col2 TEXT)\n"
+            "CREATE TABLE table3 (col3 TEXT)\n"
             "INSERT INTO table1 (col1) VALUES ('a')\n"
             "INSERT INTO table2 (col2) VALUES ('b')\n"
             "INSERT INTO table3 (col3) VALUES ('c')\n"
@@ -547,11 +632,11 @@ class TestCLIWorkflows:
 
     def test_vacuum_after_deletions(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE items (id)\n"
-            "INSERT INTO items (id) VALUES ('1')\n"
-            "INSERT INTO items (id) VALUES ('2')\n"
-            "INSERT INTO items (id) VALUES ('3')\n"
-            "DELETE FROM items WHERE id = '2'\n"
+            "CREATE TABLE items (id INT)\n"
+            "INSERT INTO items (id) VALUES (1)\n"
+            "INSERT INTO items (id) VALUES (2)\n"
+            "INSERT INTO items (id) VALUES (3)\n"
+            "DELETE FROM items WHERE id = 2\n"
             "VACUUM\n"
             "SELECT * FROM items\n"
             "exit\n"
@@ -567,7 +652,7 @@ class TestCLIWorkflows:
 class TestCLIMixedOperations:
     def test_insert_select_update_delete_repeat(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE cycle (state)\n"
+            "CREATE TABLE cycle (state TEXT)\n"
             "INSERT INTO cycle (state) VALUES ('created')\n"
             "SELECT * FROM cycle\n"
             "UPDATE cycle SET state = 'updated'\n"
@@ -587,16 +672,16 @@ class TestCLIMixedOperations:
 
     def test_multi_table_cascading_updates(self, db_file: Path) -> None:
         input_text = (
-            "CREATE TABLE categories (id, name)\n"
-            "CREATE TABLE products (id, cat_id, name)\n"
-            "INSERT INTO categories (id, name) VALUES ('1', 'Electronics')\n"
-            "INSERT INTO categories (id, name) VALUES ('2', 'Books')\n"
-            "INSERT INTO products (id, cat_id, name) VALUES ('101', '1', 'Laptop')\n"
-            "INSERT INTO products (id, cat_id, name) VALUES ('102', '1', 'Phone')\n"
-            "INSERT INTO products (id, cat_id, name) VALUES ('201', '2', 'Novel')\n"
-            "UPDATE categories SET name = 'Gadgets' WHERE id = '1'\n"
+            "CREATE TABLE categories (id INT, name TEXT)\n"
+            "CREATE TABLE products (id INT, cat_id INT, name TEXT)\n"
+            "INSERT INTO categories (id, name) VALUES (1, 'Electronics')\n"
+            "INSERT INTO categories (id, name) VALUES (2, 'Books')\n"
+            "INSERT INTO products (id, cat_id, name) VALUES (101, 1, 'Laptop')\n"
+            "INSERT INTO products (id, cat_id, name) VALUES (102, 1, 'Phone')\n"
+            "INSERT INTO products (id, cat_id, name) VALUES (201, 2, 'Novel')\n"
+            "UPDATE categories SET name = 'Gadgets' WHERE id = 1\n"
             "SELECT * FROM categories\n"
-            "SELECT * FROM products WHERE cat_id = '1'\n"
+            "SELECT * FROM products WHERE cat_id = 1\n"
             "exit\n"
         )
         stdout, code = run_cli(input_text, db_file)
@@ -610,18 +695,18 @@ class TestCLIMixedOperations:
 
 class TestCLILargeOperations:
     def test_bulk_insert_many_rows(self, db_file: Path) -> None:
-        input_text = "CREATE TABLE big (n)\n"
+        input_text = "CREATE TABLE big (n INT)\n"
         for i in range(50):
-            input_text += f"INSERT INTO big (n) VALUES ('{i}')\n"
+            input_text += f"INSERT INTO big (n) VALUES ({i})\n"
         input_text += "SELECT * FROM big\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert stdout.count("Affected rows: 1") == 50
 
     def test_wide_table(self, db_file: Path) -> None:
-        cols = ", ".join(f"col{i}" for i in range(20))
+        cols = ", ".join(f"col{i} TEXT" for i in range(20))
         vals = ", ".join(f"'{i}'" for i in range(20))
-        input_text = f"CREATE TABLE wide ({cols})\nINSERT INTO wide ({cols}) VALUES ({vals})\nSELECT * FROM wide\nexit\n"
+        input_text = f"CREATE TABLE wide ({cols})\nINSERT INTO wide ({', '.join(f'col{i}' for i in range(20))}) VALUES ({vals})\nSELECT * FROM wide\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0
         assert "Affected rows: 1" in stdout
@@ -631,7 +716,7 @@ class TestCLILargeOperations:
     def test_many_tables(self, db_file: Path) -> None:
         input_text = ""
         for i in range(20):
-            input_text += f"CREATE TABLE t{i} (id)\n"
+            input_text += f"CREATE TABLE t{i} (id INT)\n"
         input_text += ".tables\nexit\n"
         stdout, code = run_cli(input_text, db_file)
         assert code == 0

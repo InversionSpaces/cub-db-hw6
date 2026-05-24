@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterator
 
+
 from dbms.errors import (
     ColumnMismatchError,
     CorruptFileError,
@@ -16,15 +17,28 @@ from dbms.errors import (
     RowNotFoundError,
     RowTooLargeError,
     TableNotFoundError,
+    TypeMismatchError,
 )
-from dbms.storage_protocol import ItemOffset, PageId, RowId, SlotId, Storage, TableName
+from dbms.storage_protocol import (
+    ItemOffset,
+    PageId,
+    RowId,
+    SBoolValue,
+    SlotId,
+    SIntValue,
+    StorageColumnDef,
+    StorageColumnType,
+    StorageRow,
+    STextValue,
+    TableName,
+)
+from dbms.storage_utils import validate_storage_value
 
 __all__ = [
     "FileStorage",
     "Page",
     "PageId",
     "SlotId",
-    "StorageRow",
     "TableMeta",
     "TableName",
     "PAGE_SIZE",
@@ -44,53 +58,60 @@ DEFAULT_PAGE_CACHE_SIZE = 128
 _thread_local = threading.local()
 
 
-class StorageRow:
-    """Represents a row of data as a tuple of strings for storage purposes."""
-
+class _StorageRowSerializer:
     @staticmethod
-    def serialize(row: tuple[str, ...]) -> bytes:
-        col_bytes = [col.encode("utf-8") for col in row]
-        total = 2 + sum(2 + len(cb) for cb in col_bytes)
-        buf = bytearray(total)
-        struct.pack_into("<H", buf, 0, len(row))
-        pos = 2
-        for cb in col_bytes:
-            struct.pack_into("<H", buf, pos, len(cb))
-            pos += 2
-            buf[pos : pos + len(cb)] = cb
-            pos += len(cb)
+    def serialize(row: StorageRow, col_types: Sequence[StorageColumnType]) -> bytes:
+        buf = bytearray()
+        for val, col_type in zip(row, col_types):
+            if col_type == StorageColumnType.INT:
+                assert isinstance(val, SIntValue)
+                buf.extend(struct.pack("<i", val.value))
+            elif col_type == StorageColumnType.BOOL:
+                assert isinstance(val, SBoolValue)
+                buf.append(0x01 if val.value else 0x00)
+            elif col_type == StorageColumnType.TEXT:
+                assert isinstance(val, STextValue)
+                encoded = val.value.encode("utf-8")
+                buf.extend(struct.pack("<H", len(encoded)))
+                buf.extend(encoded)
         return bytes(buf)
 
     @staticmethod
-    def deserialize(data: bytes) -> tuple[str, ...]:
+    def deserialize(data: bytes, col_types: Sequence[StorageColumnType]) -> StorageRow:
         mv = memoryview(data)
         offset = 0
-        col_count = struct.unpack_from("<H", mv, offset)[0]
-        offset += 2
-        cols: list[str] = []
-        for _ in range(col_count):
-            col_len = struct.unpack_from("<H", mv, offset)[0]
-            offset += 2
-            col = mv[offset : offset + col_len].tobytes().decode("utf-8")
-            offset += col_len
-            cols.append(col)
+        cols: list[SIntValue | SBoolValue | STextValue] = []
+        for col_type in col_types:
+            if col_type == StorageColumnType.INT:
+                val = struct.unpack_from("<i", mv, offset)[0]
+                offset += 4
+                cols.append(SIntValue(value=val))
+            elif col_type == StorageColumnType.BOOL:
+                byte_val = mv[offset]
+                offset += 1
+                cols.append(SBoolValue(value=byte_val != 0))
+            elif col_type == StorageColumnType.TEXT:
+                text_len = struct.unpack_from("<H", mv, offset)[0]
+                offset += 2
+                text = mv[offset : offset + text_len].tobytes().decode("utf-8")
+                offset += text_len
+                cols.append(STextValue(value=text))
         return tuple(cols)
-
 
 
 @dataclass
 class TableMeta:
     name: TableName
-    columns: tuple[str, ...]
+    columns: tuple[StorageColumnDef, ...]
     head_data_page: PageId
 
     @staticmethod
-    def serialize(name: TableName, columns: tuple[str, ...], head_data_page: PageId) -> bytes:
+    def serialize(name: TableName, columns: tuple[StorageColumnDef, ...], head_data_page: PageId) -> bytes:
         name_bytes = name.encode("utf-8")
-        col_bytes_list = [col.encode("utf-8") for col in columns]
         total = 2 + len(name_bytes) + 2
-        for cb in col_bytes_list:
-            total += 2 + len(cb)
+        for cd in columns:
+            col_bytes = cd.name.encode("utf-8")
+            total += 2 + len(col_bytes) + 1
         total += 4
         buf = bytearray(total)
         struct.pack_into("<H", buf, 0, len(name_bytes))
@@ -99,16 +120,19 @@ class TableMeta:
         pos += len(name_bytes)
         struct.pack_into("<H", buf, pos, len(columns))
         pos += 2
-        for cb in col_bytes_list:
-            struct.pack_into("<H", buf, pos, len(cb))
+        for cd in columns:
+            col_bytes = cd.name.encode("utf-8")
+            struct.pack_into("<H", buf, pos, len(col_bytes))
             pos += 2
-            buf[pos : pos + len(cb)] = cb
-            pos += len(cb)
+            buf[pos : pos + len(col_bytes)] = col_bytes
+            pos += len(col_bytes)
+            buf[pos] = cd.type.value
+            pos += 1
         struct.pack_into("<I", buf, pos, head_data_page)
         return bytes(buf)
 
     @staticmethod
-    def deserialize(data: bytes) -> TableMeta:
+    def deserialize(data: bytes) -> "TableMeta":
         mv = memoryview(data)
         offset = 0
         name_len = struct.unpack_from("<H", mv, offset)[0]
@@ -117,25 +141,25 @@ class TableMeta:
         offset += name_len
         num_cols = struct.unpack_from("<H", mv, offset)[0]
         offset += 2
-        columns: list[str] = []
+        columns: list[StorageColumnDef] = []
         for _ in range(num_cols):
             col_len = struct.unpack_from("<H", mv, offset)[0]
             offset += 2
-            col = mv[offset : offset + col_len].tobytes().decode("utf-8")
+            col_name = mv[offset : offset + col_len].tobytes().decode("utf-8")
             offset += col_len
-            columns.append(col)
+            col_type_byte = mv[offset]
+            offset += 1
+            if col_type_byte == 0:
+                col_type = StorageColumnType.INT
+            elif col_type_byte == 1:
+                col_type = StorageColumnType.BOOL
+            elif col_type_byte == 2:
+                col_type = StorageColumnType.TEXT
+            else:
+                raise CorruptFileError(f"Invalid column type byte: {col_type_byte}")
+            columns.append(StorageColumnDef(name=col_name, type=col_type))
         head_data_page = PageId(struct.unpack_from("<I", mv, offset)[0])
         return TableMeta(name=name, columns=tuple(columns), head_data_page=head_data_page)
-
-    @staticmethod
-    def estimate_size(name: TableName, columns: tuple[str, ...]) -> int:
-        name_bytes = name.encode("utf-8")
-        size = 2 + len(name_bytes) + 2
-        for col in columns:
-            col_bytes = col.encode("utf-8")
-            size += 2 + len(col_bytes)
-        size += 4
-        return size
 
 
 @dataclass
@@ -355,9 +379,9 @@ class FileStorage:
         self._page_cache: OrderedDict[PageId, Page] = OrderedDict()
         self._clean_pages: OrderedDict[PageId, None] = OrderedDict()
         self._dirty_pages: set[PageId] = set()
-        self._pending_creates: dict[TableName, tuple[str, ...]] = {}
-        self._pending_inserts: dict[TableName, list[tuple[str, ...]]] = {}
-        self._pending_updates: dict[TableName, dict[RowId, tuple[str, ...]]] = {}
+        self._pending_creates: dict[TableName, tuple[StorageColumnDef, ...]] = {}
+        self._pending_inserts: dict[TableName, list[StorageRow]] = {}
+        self._pending_updates: dict[TableName, dict[RowId, StorageRow]] = {}
         self._pending_deletes: dict[TableName, set[RowId]] = {}
         self._next_page_id: PageId = PageId(0)
         self._table_last_page: dict[TableName, PageId] = {}
@@ -515,7 +539,7 @@ class FileStorage:
             return found
         return self._append_data_page(table_name)
 
-    def create_table(self, name: TableName, columns: Sequence[str]) -> None:
+    def create_table(self, name: TableName, columns: Sequence[StorageColumnDef]) -> None:
         if name in self._tables:
             raise DuplicateTableError(name)
         head_pid = self._allocate_page(PAGE_TYPE_DATA)
@@ -529,53 +553,54 @@ class FileStorage:
     def table_exists(self, name: TableName) -> bool:
         return name in self._tables
 
-    def get_columns(self, name: TableName) -> Sequence[str]:
-        return self._require_table(name).columns
+    def get_columns(self, name: TableName) -> Sequence[StorageColumnDef]:
+        meta = self._require_table(name)
+        return meta.columns
 
     def get_tables(self) -> Sequence[TableName]:
         return list(self._tables.keys())
 
-    def insert_row(self, table: TableName, row: tuple[str, ...]) -> None:
-        """Stage a row insertion. Not visible until commit."""
+    def insert_row(self, table: TableName, row: StorageRow) -> None:
         meta = self._require_table(table)
-        if len(row) != len(meta.columns):
+        storage_cols = meta.columns
+        if len(row) != len(storage_cols):
             raise ColumnMismatchError(
-                f"Expected {len(meta.columns)} values, got {len(row)}"
+                f"Expected {len(storage_cols)} values, got {len(row)}"
             )
-        row_bytes = StorageRow.serialize(row)
+        for i, (val, col_def) in enumerate(zip(row, storage_cols)):
+            validate_storage_value(val, col_def, storage_cols[i].name)
+
+        row_bytes = _StorageRowSerializer.serialize(row, tuple(cd.type for cd in storage_cols))
         if len(row_bytes) > MAX_ITEM_SIZE:
             raise RowTooLargeError(
                 f"Row size {len(row_bytes)} exceeds max {MAX_ITEM_SIZE}"
             )
         self._pending_inserts.setdefault(table, []).append(row)
 
-    def scan_rows(
-        self, table: TableName
-    ) -> Iterator[tuple[RowId, tuple[str, ...]]]:
+    def scan_rows(self, table: TableName) -> Iterator[tuple[RowId, StorageRow]]:
         self._require_table(table)
         meta = self._tables[table]
+        col_types = tuple(cd.type for cd in meta.columns)
         page_id = meta.head_data_page
         while page_id != PageId(0):
             page = self._get_page(page_id)
             for i in range(len(page.item_ids)):
                 if page.is_deleted(SlotId(i)):
                     continue
-                row = StorageRow.deserialize(page.items[i])
+                row = _StorageRowSerializer.deserialize(page.items[i], col_types)
                 yield ((page_id, SlotId(i)), row)
             page_id = page.header.next_page
 
-    def mark_update(
-        self, table: TableName, row_id: RowId, new_row: tuple[str, ...]
-    ) -> None:
-        """Stage a row update. Not visible until commit.
-        
-        Calling both mark_update and mark_delete on same RowId is undefined.
-        """
+    def mark_update(self, table: TableName, row_id: RowId, new_row: StorageRow) -> None:
         meta = self._require_table(table)
-        if len(new_row) != len(meta.columns):
+        storage_cols = meta.columns
+        if len(new_row) != len(storage_cols):
             raise ColumnMismatchError(
-                f"Expected {len(meta.columns)} values, got {len(new_row)}"
+                f"Expected {len(storage_cols)} values, got {len(new_row)}"
             )
+        for i, (val, col_def) in enumerate(zip(new_row, storage_cols)):
+            validate_storage_value(val, col_def, storage_cols[i].name)
+
         page_id, slot_id = row_id
         if page_id in self._page_to_table:
             actual_table = self._page_to_table[page_id]
@@ -586,10 +611,6 @@ class FileStorage:
         self._pending_updates.setdefault(table, {})[row_id] = new_row
 
     def mark_delete(self, table: TableName, row_id: RowId) -> None:
-        """Stage a row deletion. Not visible until commit.
-        
-        Calling both mark_update and mark_delete on same RowId is undefined.
-        """
         self._require_table(table)
         page_id, slot_id = row_id
         if page_id in self._page_to_table:
@@ -608,8 +629,10 @@ class FileStorage:
 
     def _apply_pending_operations(self) -> None:
         for table_name, rows in self._pending_inserts.items():
+            storage_cols = self._tables[table_name].columns
+            col_types = tuple(cd.type for cd in storage_cols)
             for row in rows:
-                row_bytes = StorageRow.serialize(row)
+                row_bytes = _StorageRowSerializer.serialize(row, col_types)
                 needed = ITEMID_SIZE + len(row_bytes)
                 page_id = self._ensure_data_page(table_name, needed)
                 page = self._get_page(page_id)
@@ -617,6 +640,8 @@ class FileStorage:
                 self._mark_dirty(page_id)
 
         for table_name, updates in self._pending_updates.items():
+            storage_cols = self._tables[table_name].columns
+            col_types = tuple(cd.type for cd in storage_cols)
             deletes = self._pending_deletes.get(table_name, set())
             for rid, new_row in updates.items():
                 if rid in deletes:
@@ -632,7 +657,7 @@ class FileStorage:
                         f"RowId ({page_id}, {slot_id}) already deleted in table {table_name}"
                     )
                 item_id = page.item_ids[slot_id]
-                new_bytes = StorageRow.serialize(new_row)
+                new_bytes = _StorageRowSerializer.serialize(new_row, col_types)
                 if len(new_bytes) <= item_id.length:
                     page.items[slot_id] = new_bytes
                     item_id.length = len(new_bytes)
@@ -724,9 +749,7 @@ class FileStorage:
             self._mark_dirty(new_pid)
             self._meta_last_page = new_pid
 
-    def _write_metadata_to_fd(
-        self, fd: BinaryIO, metas: list[TableMeta]
-    ) -> PageId:
+    def _write_metadata_to_fd(self, fd: BinaryIO, metas: list[TableMeta]) -> PageId:
         meta_page = Page.empty(PAGE_TYPE_META)
         current_pid = PageId(0)
 
@@ -782,7 +805,7 @@ class FileStorage:
         self,
         tmp_fd: BinaryIO,
         table_order: list[TableName],
-        table_columns: dict[TableName, tuple[str, ...]],
+        table_columns: dict[TableName, tuple[StorageColumnDef, ...]],
         num_meta_pages: int,
     ) -> tuple[list[TableMeta], dict[TableName, PageId], PageId, PageId]:
         tmp_fd.write(b"\x00" * (num_meta_pages * PAGE_SIZE))
@@ -866,7 +889,7 @@ class FileStorage:
         self._flush_dirty_pages()
         self._fd.close()
 
-    def __enter__(self) -> FileStorage:
+    def __enter__(self) -> "FileStorage":
         return self
 
     def __exit__(self, *args: object) -> None:
