@@ -13,7 +13,11 @@ createTable
     ;
 
 insertInto
-    : INSERT INTO identifier LPAREN columnList RPAREN VALUES LPAREN valueList RPAREN
+    : INSERT INTO identifier LPAREN columnList RPAREN VALUES valueTupleList
+    ;
+
+valueTupleList
+    : LPAREN valueList RPAREN (COMMA LPAREN valueList RPAREN)*
     ;
 
 selectStmt

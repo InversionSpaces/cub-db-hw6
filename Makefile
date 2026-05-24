@@ -1,4 +1,4 @@
-.PHONY: generate lint test clean coverage
+.PHONY: generate lint test clean coverage loadtest
 
 generate:
 	uv run antlr4 -Dlanguage=Python3 -visitor -no-listener -o src/dbms/generated grammar/SimpleSQL.g4
@@ -15,6 +15,9 @@ coverage:
 	uv run coverage run -m pytest
 	uv run coverage report
 	uv run coverage html
+
+loadtest:
+	uv run python tests/load/test.py
 
 clean:
 	rm -rf src/dbms/generated/*.interp src/dbms/generated/*.tokens src/dbms/generated/__pycache__

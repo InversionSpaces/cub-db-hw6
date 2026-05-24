@@ -48,6 +48,7 @@ from dbms.errors import (
     TableNotFoundError,
     TypeMismatchError,
 )
+
 from dbms.executor import Executor, SelectResult
 from dbms.storage import FileStorage
 from dbms.storage_protocol import TableName
@@ -110,7 +111,7 @@ class TestInsert:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert len(result.rows) == 1
@@ -126,7 +127,7 @@ class TestInsert:
         executor.insert(InsertStmt(
             table="t",
             columns=("b", "a"),
-            values=(IntValue(value=42), TextValue(value="x"))
+            value_rows=((IntValue(value=42), TextValue(value="x")),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert len(result.rows) == 1
@@ -138,7 +139,7 @@ class TestInsert:
             executor.insert(InsertStmt(
                 table="missing",
                 columns=("a",),
-                values=(TextValue(value="x"),)
+                value_rows=((TextValue(value="x"),),)
             ))
 
     def test_column_count_mismatch(self, executor: Executor) -> None:
@@ -151,7 +152,7 @@ class TestInsert:
             executor.insert(InsertStmt(
                 table="t",
                 columns=("a",),
-                values=(TextValue(value="x"),)
+                value_rows=((TextValue(value="x"),),)
             ))
 
     def test_insert_column_subset_mismatch(self, executor: Executor) -> None:
@@ -165,7 +166,7 @@ class TestInsert:
             executor.insert(InsertStmt(
                 table="t",
                 columns=("a", "b"),
-                values=(TextValue(value="x"), IntValue(value=1))
+                value_rows=((TextValue(value="x"), IntValue(value=1)),)
             ))
 
     def test_type_mismatch_on_insert(self, executor: Executor) -> None:
@@ -175,7 +176,7 @@ class TestInsert:
             executor.insert(InsertStmt(
                 table="t",
                 columns=("a",),
-                values=(TextValue(value="not_an_int"),)
+                value_rows=((TextValue(value="not_an_int"),),)
             ))
         assert exc_info.value.column == "a"
         assert exc_info.value.expected == "INT"
@@ -186,12 +187,12 @@ class TestInsert:
         executor.insert(InsertStmt(
             table="t",
             columns=("active",),
-            values=(BoolValue(value=True),)
+            value_rows=((BoolValue(value=True),),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("active",),
-            values=(BoolValue(value=False),)
+            value_rows=((BoolValue(value=False),),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert len(result.rows) == 2
@@ -205,13 +206,13 @@ class TestInsert:
             executor.insert(InsertStmt(
                 table="t",
                 columns=("active",),
-                values=(IntValue(value=1),)
+                value_rows=((IntValue(value=1),),)
             ))
         with pytest.raises(TypeMismatchError):
             executor.insert(InsertStmt(
                 table="t",
                 columns=("active",),
-                values=(TextValue(value="true"),)
+                value_rows=((TextValue(value="true"),),)
             ))
 
     def test_insert_int_into_text_column(self, executor: Executor) -> None:
@@ -220,7 +221,7 @@ class TestInsert:
         with pytest.raises(TypeMismatchError) as exc_info:
             executor.insert(InsertStmt(
                 table="t", columns=("a",),
-                values=(IntValue(value=1),)
+                value_rows=((IntValue(value=1),),)
             ))
         assert exc_info.value.column == "a"
         assert exc_info.value.expected == "TEXT"
@@ -231,13 +232,13 @@ class TestInsert:
         with pytest.raises(TypeMismatchError):
             executor.insert(InsertStmt(
                 table="t", columns=("a",),
-                values=(BoolValue(value=True),)
+                value_rows=((BoolValue(value=True),),)
             ))
 
     def test_insert_int_zero(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.INT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=0),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=0),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=IntValue(value=0)),
@@ -248,7 +249,7 @@ class TestInsert:
     def test_insert_int_negative(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.INT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=-5),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=-5),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=IntValue(value=-5)),
@@ -259,8 +260,8 @@ class TestInsert:
     def test_insert_empty_text(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.TEXT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(TextValue(value=""),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(TextValue(value="hello"),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((TextValue(value=""),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((TextValue(value="hello"),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=TextValue(value="")),
@@ -274,12 +275,12 @@ class TestInsert:
         executor.insert(InsertStmt(
             table="t",
             columns=("a",),
-            values=(TextValue(value="x"),)
+            value_rows=((TextValue(value="x"),),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("a",),
-            values=(TextValue(value="x"),)
+            value_rows=((TextValue(value="x"),),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert len(result.rows) == 2
@@ -294,22 +295,61 @@ class TestInsert:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=30))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30)),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert len(result.rows) == 3
         names = {r[0] for r in result.rows}
         assert names == {TextValue(value="Alice"), TextValue(value="Bob"), TextValue(value="Carol")}
+
+    def test_insert_batch(self, executor: Executor, store: FileStorage) -> None:
+        cols = (
+            ColumnDef(name="a", type=ColumnType.INT),
+            ColumnDef(name="b", type=ColumnType.INT),
+            ColumnDef(name="c", type=ColumnType.INT),
+        )
+        executor.create_table(CreateTableStmt(name="t", columns=cols))
+        count = executor.insert(InsertStmt(
+            table="t",
+            columns=("a", "b", "c"),
+            value_rows=(
+                (IntValue(value=1), IntValue(value=2), IntValue(value=3)),
+                (IntValue(value=4), IntValue(value=5), IntValue(value=6)),
+                (IntValue(value=7), IntValue(value=8), IntValue(value=9)),
+            )
+        ))
+        assert count == 3
+        result = executor.select(SelectStmt(table="t", columns="*", where=None))
+        assert len(result.rows) == 3
+        assert result.rows[0] == (IntValue(value=1), IntValue(value=2), IntValue(value=3))
+        assert result.rows[1] == (IntValue(value=4), IntValue(value=5), IntValue(value=6))
+        assert result.rows[2] == (IntValue(value=7), IntValue(value=8), IntValue(value=9))
+
+    def test_insert_batch_single_row(self, executor: Executor, store: FileStorage) -> None:
+        cols = (
+            ColumnDef(name="a", type=ColumnType.INT),
+            ColumnDef(name="b", type=ColumnType.INT),
+        )
+        executor.create_table(CreateTableStmt(name="t", columns=cols))
+        count = executor.insert(InsertStmt(
+            table="t",
+            columns=("a", "b"),
+            value_rows=((IntValue(value=1), IntValue(value=2)),)
+        ))
+        assert count == 1
+        result = executor.select(SelectStmt(table="t", columns="*", where=None))
+        assert len(result.rows) == 1
+        assert result.rows[0] == (IntValue(value=1), IntValue(value=2))
 
 
 class TestSelect:
@@ -322,7 +362,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert result.columns == ("name", "age")
@@ -337,7 +377,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -357,7 +397,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -376,12 +416,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -400,17 +440,17 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=30))
+            value_rows=((TextValue(value="Bob"), IntValue(value=30)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=25))
+            value_rows=((TextValue(value="Carol"), IntValue(value=25)),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -427,7 +467,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name",),
-            values=(TextValue(value="Alice"),)
+            value_rows=((TextValue(value="Alice"),),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -442,12 +482,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("city",),
-            values=(TextValue(value="NYC"),)
+            value_rows=((TextValue(value="NYC"),),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("city",),
-            values=(TextValue(value="NYC"),)
+            value_rows=((TextValue(value="NYC"),),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -466,12 +506,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA"))
+            value_rows=((TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA")),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -497,12 +537,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -522,7 +562,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name",),
-            values=(TextValue(value="Alice"),)
+            value_rows=((TextValue(value="Alice"),),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -540,7 +580,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name",),
-            values=(TextValue(value="Alice"),)
+            value_rows=((TextValue(value="Alice"),),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -561,12 +601,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), TextValue(value="x"))
+            value_rows=((TextValue(value="x"), TextValue(value="x")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), TextValue(value="y"))
+            value_rows=((TextValue(value="x"), TextValue(value="y")),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -586,12 +626,12 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b", "c"),
-            values=(TextValue(value="x"), TextValue(value="x"), TextValue(value="1"))
+            value_rows=((TextValue(value="x"), TextValue(value="x"), TextValue(value="1")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b", "c"),
-            values=(TextValue(value="x"), TextValue(value="y"), TextValue(value="1"))
+            value_rows=((TextValue(value="x"), TextValue(value="y"), TextValue(value="1")),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -613,17 +653,17 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA"))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Carol"), IntValue(value=30), TextValue(value="SF"))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30), TextValue(value="SF")),)
         ))
         where = WhereAnd(operands=(
             WhereEq(column="age", value=IntValue(value=30)),
@@ -667,7 +707,7 @@ class TestSelect:
         executor.insert(InsertStmt(
             table="t",
             columns=("a",),
-            values=(IntValue(value=1),)
+            value_rows=((IntValue(value=1),),)
         ))
         with pytest.raises(TypeMismatchError) as exc_info:
             executor.select(SelectStmt(
@@ -812,7 +852,7 @@ class TestUpdate:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), TextValue(value="y"))
+            value_rows=((TextValue(value="x"), TextValue(value="y")),)
         ))
         executor.update(UpdateStmt(
             table="t",
@@ -920,9 +960,9 @@ class TestUpdate:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("a", "b", "c"),
-            values=(TextValue(value="x"), TextValue(value="x"), IntValue(value=1))))
+            value_rows=((TextValue(value="x"), TextValue(value="x"), IntValue(value=1)),)))
         executor.insert(InsertStmt(table="t", columns=("a", "b", "c"),
-            values=(TextValue(value="x"), TextValue(value="y"), IntValue(value=2))))
+            value_rows=((TextValue(value="x"), TextValue(value="y"), IntValue(value=2)),)))
         count = executor.update(UpdateStmt(
             table="t",
             assignments=(Assignment(column="c", value=IntValue(value=99)),),
@@ -945,9 +985,9 @@ class TestUpdate:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA"))))
+            value_rows=((TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA")),)))
         count = executor.update(UpdateStmt(
             table="t",
             assignments=(Assignment(column="city", value=TextValue(value="SF")),),
@@ -970,11 +1010,11 @@ class TestUpdate:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=30))))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30)),)))
         count = executor.update(UpdateStmt(
             table="t",
             assignments=(Assignment(column="age", value=IntValue(value=99)),),
@@ -997,7 +1037,7 @@ class TestUpdate:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)))
         count = executor.update(UpdateStmt(
             table="t",
             assignments=(AssignmentColEq(left="a", right="a"),),
@@ -1064,11 +1104,11 @@ class TestDelete:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA"))))
+            value_rows=((TextValue(value="Bob"), IntValue(value=30), TextValue(value="LA")),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age", "city"),
-            values=(TextValue(value="Carol"), IntValue(value=25), TextValue(value="NYC"))))
+            value_rows=((TextValue(value="Carol"), IntValue(value=25), TextValue(value="NYC")),)))
         count = executor.delete(DeleteStmt(
             table="t",
             where=WhereAnd(operands=(
@@ -1089,11 +1129,11 @@ class TestDelete:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)))
         executor.insert(InsertStmt(table="t", columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=30))))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30)),)))
         count = executor.delete(DeleteStmt(
             table="t",
             where=WhereOr(operands=(
@@ -1113,9 +1153,9 @@ class TestDelete:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(TextValue(value="x"), TextValue(value="x"))))
+            value_rows=((TextValue(value="x"), TextValue(value="x")),)))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(TextValue(value="x"), TextValue(value="y"))))
+            value_rows=((TextValue(value="x"), TextValue(value="y")),)))
         count = executor.delete(DeleteStmt(
             table="t",
             where=WhereColEq(left="a", right="b"),
@@ -1133,13 +1173,13 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("a",),
-            values=(TextValue(value="x"),)
+            value_rows=((TextValue(value="x"),),)
         ))
         executor.delete(DeleteStmt(table="t", where=None))
         executor.insert(InsertStmt(
             table="t",
             columns=("a",),
-            values=(TextValue(value="y"),)
+            value_rows=((TextValue(value="y"),),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=WhereEq(
             column="a",
@@ -1156,7 +1196,7 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)
         ))
         result = executor.select(SelectStmt(table="t", columns="*", where=None))
         assert result.rows == ((TextValue(value="x"), IntValue(value=42)),)
@@ -1186,17 +1226,17 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA"))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Carol"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30), TextValue(value="NYC")),)
         ))
 
         executor.update(UpdateStmt(
@@ -1234,13 +1274,13 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)
         ))
         executor.delete(DeleteStmt(table="t", where=None))
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)
         ))
         result = executor.select(SelectStmt(
             table="t",
@@ -1314,17 +1354,17 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC"))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30), TextValue(value="NYC")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA"))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25), TextValue(value="LA")),)
         ))
         executor.insert(InsertStmt(
             table="t",
             columns=("name", "age", "city"),
-            values=(TextValue(value="Carol"), IntValue(value=30), TextValue(value="SF"))
+            value_rows=((TextValue(value="Carol"), IntValue(value=30), TextValue(value="SF")),)
         ))
 
         where_or = WhereOr(operands=(
@@ -1370,7 +1410,7 @@ class TestLifecycleSequences:
         executor.insert(InsertStmt(
             table="t",
             columns=("a", "b"),
-            values=(TextValue(value="x"), IntValue(value=42))
+            value_rows=((TextValue(value="x"), IntValue(value=42)),)
         ))
         original = executor.select(SelectStmt(table="t", columns="*", where=None))
         with pytest.raises(ColumnMismatchError):
@@ -1388,9 +1428,9 @@ class TestEqualitySemantics:
     def test_int_equality_filters(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.INT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=1),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=2),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=1),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=1),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=2),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=1),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=IntValue(value=1))
@@ -1401,9 +1441,9 @@ class TestEqualitySemantics:
     def test_bool_equality_filters(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.BOOL),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(BoolValue(value=True),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(BoolValue(value=False),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(BoolValue(value=True),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((BoolValue(value=True),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((BoolValue(value=False),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((BoolValue(value=True),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=BoolValue(value=False))
@@ -1414,8 +1454,8 @@ class TestEqualitySemantics:
     def test_text_equality_filters(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.TEXT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(TextValue(value="hello"),)))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(TextValue(value="world"),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((TextValue(value="hello"),),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((TextValue(value="world"),),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereEq(column="a", value=TextValue(value="world"))
@@ -1426,7 +1466,7 @@ class TestEqualitySemantics:
     def test_cross_type_where_rejected_int_text(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.INT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=1),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=1),),)))
         with pytest.raises(TypeMismatchError):
             executor.select(SelectStmt(
                 table="t", columns="*",
@@ -1436,7 +1476,7 @@ class TestEqualitySemantics:
     def test_cross_type_where_rejected_int_bool(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.INT),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(IntValue(value=1),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((IntValue(value=1),),)))
         with pytest.raises(TypeMismatchError):
             executor.select(SelectStmt(
                 table="t", columns="*",
@@ -1446,7 +1486,7 @@ class TestEqualitySemantics:
     def test_cross_type_where_rejected_bool_text(self, executor: Executor) -> None:
         cols = (ColumnDef(name="a", type=ColumnType.BOOL),)
         executor.create_table(CreateTableStmt(name="t", columns=cols))
-        executor.insert(InsertStmt(table="t", columns=("a",), values=(BoolValue(value=True),)))
+        executor.insert(InsertStmt(table="t", columns=("a",), value_rows=((BoolValue(value=True),),)))
         with pytest.raises(TypeMismatchError):
             executor.select(SelectStmt(
                 table="t", columns="*",
@@ -1461,7 +1501,7 @@ class TestEqualitySemantics:
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(
             table="t", columns=("a", "b"),
-            values=(IntValue(value=1), TextValue(value="x"))
+            value_rows=((IntValue(value=1), TextValue(value="x")),)
         ))
         with pytest.raises(TypeMismatchError):
             executor.select(SelectStmt(
@@ -1476,9 +1516,9 @@ class TestEqualitySemantics:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(IntValue(value=42), IntValue(value=42))))
+            value_rows=((IntValue(value=42), IntValue(value=42)),)))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(IntValue(value=42), IntValue(value=7))))
+            value_rows=((IntValue(value=42), IntValue(value=7)),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereColEq(left="a", right="b"),
@@ -1493,9 +1533,9 @@ class TestEqualitySemantics:
         )
         executor.create_table(CreateTableStmt(name="t", columns=cols))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(BoolValue(value=True), BoolValue(value=True))))
+            value_rows=((BoolValue(value=True), BoolValue(value=True)),)))
         executor.insert(InsertStmt(table="t", columns=("a", "b"),
-            values=(BoolValue(value=True), BoolValue(value=False))))
+            value_rows=((BoolValue(value=True), BoolValue(value=False)),)))
         result = executor.select(SelectStmt(
             table="t", columns="*",
             where=WhereColEq(left="a", right="b"),
@@ -1512,9 +1552,9 @@ class TestMultipleTableIsolation:
         )
         executor.create_table(CreateTableStmt(name="users", columns=users_cols))
         executor.insert(InsertStmt(table="users", columns=("name", "age"),
-            values=(TextValue(value="Alice"), IntValue(value=30))))
+            value_rows=((TextValue(value="Alice"), IntValue(value=30)),)))
         executor.insert(InsertStmt(table="users", columns=("name", "age"),
-            values=(TextValue(value="Bob"), IntValue(value=25))))
+            value_rows=((TextValue(value="Bob"), IntValue(value=25)),)))
 
         products_cols = (
             ColumnDef(name="item", type=ColumnType.TEXT),
@@ -1522,9 +1562,9 @@ class TestMultipleTableIsolation:
         )
         executor.create_table(CreateTableStmt(name="products", columns=products_cols))
         executor.insert(InsertStmt(table="products", columns=("item", "price"),
-            values=(TextValue(value="Widget"), IntValue(value=10))))
+            value_rows=((TextValue(value="Widget"), IntValue(value=10)),)))
         executor.insert(InsertStmt(table="products", columns=("item", "price"),
-            values=(TextValue(value="Gadget"), IntValue(value=20))))
+            value_rows=((TextValue(value="Gadget"), IntValue(value=20)),)))
 
     def test_delete_from_one_table_leaves_other_intact(self, executor: Executor) -> None:
         self._setup_two_tables(executor)
@@ -1561,7 +1601,7 @@ class TestMultipleTableIsolation:
     def test_insert_into_one_table_leaves_other_unchanged(self, executor: Executor) -> None:
         self._setup_two_tables(executor)
         executor.insert(InsertStmt(table="users", columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=35))))
+            value_rows=((TextValue(value="Carol"), IntValue(value=35)),)))
         users_result = executor.select(SelectStmt(table="users", columns="*", where=None))
         assert len(users_result.rows) == 3
         products_result = executor.select(SelectStmt(table="products", columns="*", where=None))
@@ -1588,9 +1628,9 @@ class TestMultipleTableIsolation:
         executor.create_table(CreateTableStmt(name="t1", columns=t1_cols))
         executor.create_table(CreateTableStmt(name="t2", columns=t2_cols))
         executor.insert(InsertStmt(table="t1", columns=("id", "val"),
-            values=(IntValue(value=1), TextValue(value="a"))))
+            value_rows=((IntValue(value=1), TextValue(value="a")),)))
         executor.insert(InsertStmt(table="t2", columns=("id", "val"),
-            values=(IntValue(value=1), TextValue(value="b"))))
+            value_rows=((IntValue(value=1), TextValue(value="b")),)))
 
         executor.update(UpdateStmt(
             table="t1",
@@ -1606,7 +1646,7 @@ class TestMultipleTableIsolation:
         self._setup_two_tables(executor)
         executor.delete(DeleteStmt(table="products", where=None))
         executor.insert(InsertStmt(table="users", columns=("name", "age"),
-            values=(TextValue(value="Carol"), IntValue(value=35))))
+            value_rows=((TextValue(value="Carol"), IntValue(value=35)),)))
         products_result = executor.select(SelectStmt(table="products", columns="*", where=None))
         assert products_result.rows == ()
         users_result = executor.select(SelectStmt(table="users", columns="*", where=None))

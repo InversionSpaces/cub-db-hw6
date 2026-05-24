@@ -99,12 +99,13 @@ class TestCreateTableStmt:
 class TestInsertStmt:
     def test_creation(self) -> None:
         values = (IntValue(value=1), TextValue(value="Alice"))
-        stmt = InsertStmt(table="users", columns=("id", "name"), values=values)
+        stmt = InsertStmt(table="users", columns=("id", "name"), value_rows=(values,))
         assert stmt.table == "users"
         assert stmt.columns == ("id", "name")
-        assert len(stmt.values) == 2
-        assert isinstance(stmt.values[0], IntValue)
-        assert isinstance(stmt.values[1], TextValue)
+        assert len(stmt.value_rows) == 1
+        assert len(stmt.value_rows[0]) == 2
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert isinstance(stmt.value_rows[0][1], TextValue)
 
 
 class TestSelectStmt:

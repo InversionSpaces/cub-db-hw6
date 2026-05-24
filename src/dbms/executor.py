@@ -139,27 +139,36 @@ class Executor:
         if not self._store.table_exists(table_name):
             raise TableNotFoundError(stmt.table)
         columns = self._get_table_columns(table_name)
-        if len(stmt.columns) != len(stmt.values):
-            raise ColumnMismatchError(
-                f"{len(stmt.columns)} columns but {len(stmt.values)} values"
-            )
+        
+        if not stmt.value_rows:
+            raise ColumnMismatchError("No values provided")
+        for row_idx, value_row in enumerate(stmt.value_rows):
+            if len(stmt.columns) != len(value_row):
+                raise ColumnMismatchError(
+                    f"{len(stmt.columns)} columns but {len(value_row)} values in row {row_idx + 1}"
+                )
         if set(stmt.columns) != set(c.name for c in columns):
             raise ColumnMismatchError(
                 f"Insert columns {stmt.columns} do not match table columns {[c.name for c in columns]}"
             )
         col_index = {name: i for i, name in enumerate(stmt.columns)}
-        final_row: tuple[Value, ...] = tuple(
-            stmt.values[col_index[c.name]] for c in columns
-        )
-        for val, col in zip(final_row, columns):
-            actual_type = value_type(val)
-            if actual_type != col.type:
-                raise TypeMismatchError(col.name, col.type.value, actual_type.value)
+        count = 0
+        for value_row in stmt.value_rows:
+            final_row: tuple[Value, ...] = tuple(
+                value_row[col_index[c.name]] for c in columns
+            )
+            for val, col in zip(final_row, columns):
+                actual_type = value_type(val)
+                if actual_type != col.type:
+                    raise TypeMismatchError(col.name, col.type.value, actual_type.value)
+            
+            storage_row = _row_to_storage(final_row)
+            self._store.insert_row(table_name, storage_row)
+            count += 1
         
-        storage_row = _row_to_storage(final_row)
-        self._store.insert_row(table_name, storage_row)
-        self._store.commit()
-        return 1
+        if count > 0:
+            self._store.commit()
+        return count
 
     def _get_table_columns(self, table_name: TableName) -> Sequence[ColumnDef]:
         storage_cols = self._store.get_columns(table_name)

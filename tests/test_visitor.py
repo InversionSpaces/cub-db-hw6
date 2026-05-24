@@ -76,60 +76,77 @@ class TestInsert:
         assert isinstance(stmt, InsertStmt)
         assert stmt.table == "users"
         assert stmt.columns == ("name", "age")
-        assert len(stmt.values) == 2
-        assert isinstance(stmt.values[0], TextValue)
-        assert stmt.values[0].value == "Alice"
-        assert isinstance(stmt.values[1], IntValue)
-        assert stmt.values[1].value == 30
+        assert len(stmt.value_rows) == 1
+        assert len(stmt.value_rows[0]) == 2
+        assert isinstance(stmt.value_rows[0][0], TextValue)
+        assert stmt.value_rows[0][0].value == "Alice"
+        assert isinstance(stmt.value_rows[0][1], IntValue)
+        assert stmt.value_rows[0][1].value == 30
 
     def test_single_value(self) -> None:
         stmt = parse("INSERT INTO t (col) VALUES ('val')")
         assert isinstance(stmt, InsertStmt)
         assert stmt.columns == ("col",)
-        assert isinstance(stmt.values[0], TextValue)
-        assert stmt.values[0].value == "val"
+        assert isinstance(stmt.value_rows[0][0], TextValue)
+        assert stmt.value_rows[0][0].value == "val"
 
     def test_int_value(self) -> None:
         stmt = parse("INSERT INTO t (n) VALUES (42)")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], IntValue)
-        assert stmt.values[0].value == 42
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert stmt.value_rows[0][0].value == 42
 
     def test_bool_value_true(self) -> None:
         stmt = parse("INSERT INTO t (b) VALUES (TRUE)")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], BoolValue)
-        assert stmt.values[0].value is True
+        assert isinstance(stmt.value_rows[0][0], BoolValue)
+        assert stmt.value_rows[0][0].value is True
 
     def test_bool_value_false(self) -> None:
         stmt = parse("INSERT INTO t (b) VALUES (FALSE)")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], BoolValue)
-        assert stmt.values[0].value is False
+        assert isinstance(stmt.value_rows[0][0], BoolValue)
+        assert stmt.value_rows[0][0].value is False
 
     def test_negative_int(self) -> None:
         stmt = parse("INSERT INTO t (n) VALUES (-123)")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], IntValue)
-        assert stmt.values[0].value == -123
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert stmt.value_rows[0][0].value == -123
 
     def test_zero_int(self) -> None:
         stmt = parse("INSERT INTO t (n) VALUES (0)")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], IntValue)
-        assert stmt.values[0].value == 0
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert stmt.value_rows[0][0].value == 0
 
     def test_mixed_types(self) -> None:
         stmt = parse("INSERT INTO t (a, b, c) VALUES (1, TRUE, 'x')")
         assert isinstance(stmt, InsertStmt)
-        assert isinstance(stmt.values[0], IntValue)
-        assert isinstance(stmt.values[1], BoolValue)
-        assert isinstance(stmt.values[2], TextValue)
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert isinstance(stmt.value_rows[0][1], BoolValue)
+        assert isinstance(stmt.value_rows[0][2], TextValue)
 
     def test_escaped_quotes(self) -> None:
         stmt = parse("INSERT INTO t (col) VALUES ('it''s')")
         assert isinstance(stmt, InsertStmt)
-        assert stmt.values[0].value == "it's"
+        assert stmt.value_rows[0][0].value == "it's"
+
+    def test_batch_insert(self) -> None:
+        stmt = parse("INSERT INTO t (a, b) VALUES (1, 2), (3, 4), (5, 6)")
+        assert isinstance(stmt, InsertStmt)
+        assert stmt.table == "t"
+        assert stmt.columns == ("a", "b")
+        assert len(stmt.value_rows) == 3
+        assert len(stmt.value_rows[0]) == 2
+        assert isinstance(stmt.value_rows[0][0], IntValue)
+        assert stmt.value_rows[0][0].value == 1
+        assert isinstance(stmt.value_rows[0][1], IntValue)
+        assert stmt.value_rows[0][1].value == 2
+        assert stmt.value_rows[1][0].value == 3
+        assert stmt.value_rows[1][1].value == 4
+        assert stmt.value_rows[2][0].value == 5
+        assert stmt.value_rows[2][1].value == 6
 
 
 class TestSelect:

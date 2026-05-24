@@ -372,7 +372,9 @@ class Page:
 
 class FileStorage:
     def __init__(
-        self, path: Path, max_page_cache_size: int = DEFAULT_PAGE_CACHE_SIZE
+        self, path: Path, 
+        max_page_cache_size: int = DEFAULT_PAGE_CACHE_SIZE,
+        optimize_space: bool = False,
     ) -> None:
         self._path = path
         self._tables: dict[TableName, TableMeta] = {}
@@ -388,6 +390,7 @@ class FileStorage:
         self._page_to_table: dict[PageId, TableName] = {}
         self._meta_last_page: PageId = PageId(0)
         self._max_page_cache_size = max_page_cache_size
+        self._optimize_space = optimize_space
 
         exists = path.exists()
         if exists:
@@ -524,6 +527,8 @@ class FileStorage:
             page = self._get_page(last_pid)
             if page.free_space() >= needed:
                 return last_pid
+        if not self._optimize_space:
+            return None
         meta = self._tables[table_name]
         page_id = meta.head_data_page
         while page_id != PageId(0):

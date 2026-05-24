@@ -88,7 +88,7 @@ class CreateTableStmt:
 class InsertStmt:
     table: str
     columns: tuple[str, ...]
-    values: tuple[Value, ...]
+    value_rows: tuple[tuple[Value, ...], ...]
 
 
 @dataclass(frozen=True)

@@ -113,8 +113,12 @@ class _ASTVisitor(SimpleSQLVisitor):
     def visitInsertInto(self, ctx: SimpleSQLParser.InsertIntoContext) -> InsertStmt:
         table = ctx.identifier().IDENTIFIER().getText()
         columns = self.visitColumnList(ctx.columnList())
-        values = self.visitValueList(ctx.valueList())
-        return InsertStmt(table=table, columns=columns, values=values)
+        value_rows = self.visitValueTupleList(ctx.valueTupleList())
+        return InsertStmt(table=table, columns=columns, value_rows=value_rows)
+
+    def visitValueTupleList(self, ctx: SimpleSQLParser.ValueTupleListContext) -> tuple[tuple[Value, ...], ...]:
+        value_lists = ctx.valueList()
+        return tuple(self.visitValueList(vl) for vl in value_lists)
 
     def visitSelectStmt(self, ctx: SimpleSQLParser.SelectStmtContext) -> SelectStmt:
         table = ctx.identifier().IDENTIFIER().getText()

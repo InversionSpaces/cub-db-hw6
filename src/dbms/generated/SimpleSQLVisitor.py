@@ -24,6 +24,11 @@ class SimpleSQLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SimpleSQLParser#valueTupleList.
+    def visitValueTupleList(self, ctx:SimpleSQLParser.ValueTupleListContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SimpleSQLParser#selectStmt.
     def visitSelectStmt(self, ctx:SimpleSQLParser.SelectStmtContext):
         return self.visitChildren(ctx)
